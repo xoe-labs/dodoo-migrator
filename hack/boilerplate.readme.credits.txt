@@ -1,0 +1,20 @@
+
+Credits
+~~~~~~~
+
+Contributors:
+
+- Stéphane Bidoul (ACSONE_)
+- Thomas Binsfeld (ACSONE_)
+- Benjamin Willig (ACSONE_)
+
+.. _ACSONE: https://acsone.eu
+
+Maintainer
+~~~~~~~~~~
+
+.. image:: https://www.acsone.eu/logo.png
+   :alt: ACSONE SA/NV
+   :target: https://www.acsone.eu
+
+This project is maintained by ACSONE SA/NV.
