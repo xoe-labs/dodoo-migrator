@@ -1,14 +1,16 @@
 # Init the repository
 
-ENV = $$(cat hack/variables.ini | grep -v "\#" | xargs)
 
 init: chmod-scripts
 	editor hack/variables.ini
 	editor hack/boilerplate.readme.credits.txt
-	env $(ENV) hack/init-repo.sh
+	hack/init-repo.sh
 
-sync:
-	git pull scaffold master
+sync: chmod-scripts
+	hack/sync-with-scaffold.sh
+
+pypi: chmod-scripts
+	hack/add-pypi-deployment-to-travis-file.sh
 
 chmod-scripts:
 	chmod +x -R hack

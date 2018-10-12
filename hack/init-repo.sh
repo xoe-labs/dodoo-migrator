@@ -1,35 +1,41 @@
 #!/bin/bash
 
-project_name=$(basename "$(pwd)")
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m' # No Color
 
+rm README.md
 
 echo -e "${GREEN}Replacing project variables and seeding files ...\n${NC}"
 
+echo -e "${GREEN}Install configparser, cause this script needs it ...\n${NC}"
+sudo -H -k pip install configparser
+
+source <(cat hack/variables.ini | hack/ini2env.py)
+
 # Seed Placeholders
-sed -i "s|{{ PROJECT }}|${PROJECT}|" hack/boilerplate.py.txt .travis.yml README.rst setup.py
-sed -i "s|{{ GITHUBORG }}|${GITHUBORG}|" .travis.yml README.rst setup.py
-sed -i "s|{{ COPYRIGHT }}|${COPYRIGHT}|" hack/boilerplate.py.txt
-sed -i "s|{{ AUTHOR }}|${AUTHOR}/" hack/boilerplate.py.txt
-sed -i "s|{{ PACKAGE_AUTHOR }}|${PACKAGE_AUTHOR}/" setup.py
-sed -i "s|{{ PACKAGE_AUTHOR_EMAIL }}|${PACKAGE_AUTHOR_EMAIL}/" setup.py
-sed -i "s|{{ PYPIUSER }}|${PYPIUSER}|" .travis.yml
-sed -i "s|{{ PYPITOKEN }}|${PYPITOKEN}|" .travis.yml
+sed -i "s|{{ PROJECT }}|${project}|g" hack/boilerplate.py.txt hack/boilerplate.py.test.txt .travis.yml README.rst setup.py
+sed -i "s|{{ GITHUBORG }}|${githuborg}|g" .travis.yml README.rst setup.py
+sed -i "s|{{ COPYRIGHT }}|${copyright}|g" hack/boilerplate.py.txt hack/boilerplate.py.test.txt
+sed -i "s|{{ AUTHOR }}|${author}|g" hack/boilerplate.py.txt hack/boilerplate.py.test.txt
+sed -i "s|{{ PACKAGE_AUTHOR }}|${package_author}|g" setup.py
+sed -i "s|{{ PACKAGE_AUTHOR_EMAIL }}|${package_author_email}|g" setup.py
 
 
-cat boilerplate.readme.credits.txt >> README.rst
-cat boilerplate.py.txt >> "src/${PROJECT}.py"
-cat boilerplate.py.txt >> "test/test_${PROJECT}.py"
-mkdir -p "test/data/test_${PROJECT}"
-touch "test/data/test_${PROJECT}/.gitkeep"
-
-echo -e "${RED}We install a bunch of pre-commit.com hooks"
-echo -e  "to help you produce better code ...\n${NC}"
-pip install pre-commit
-pre-commit install
+cat hack/boilerplate.readme.credits.txt >> README.rst
+cat hack/boilerplate.py.txt >> "src/${project}.py"
+cat hack/boilerplate.py.test.txt >> "tests/test_${project}.py"
+mkdir -p "tests/data/test_${project}"
+touch "tests/data/test_${project}/.gitkeep"
+if [ ! $(which pre-commit) ]; then
+	echo -e "${RED}We install a bunch of pre-commit.com hooks"
+	echo -e  "to help you produce better code ...\n${NC}"
+	sudo -k -H pip install pre-commit
+	pre-commit install
+else
+	pre-commit install
+fi
 
 if [ ! $(which hub) ]; then
 	get_latest_release() {
@@ -53,19 +59,40 @@ if [ ! $(which hub) ]; then
         CYGWIN*|MINGW*|MSYS*) _platform__type="windows" ;;
     esac
 
-	wget -q https://github.com/github/hub/releases/download/${release}/hub-${_platform__type}-${_arch__type}-${release#"v"}.tgz -O- | tar -xzO \*/bin/hub > /urs/local/bin/hub
-	chmod +x ./urs/local/bin/hub
-	hub version
-	alias git=hub
+	wget -p https://github.com/github/hub/releases/download/${release}/hub-${_platform__type}-${_arch__type}-${release#"v"}.tgz -O /tmp/hub.tgz
+	sudo -k tar -vxf /tmp/hub.tgz --directory /usr/local/bin/ --strip-components=2 --wildcards \*/bin/hub
+	sudo chmod +x /usr/local/bin/hub
+	/usr/local/bin/hub version
+	echo 'eval "$(hub alias -s)"' >> ~/.bash_profile
+	PATH=$PATH:/usr/local/bin/hub
 fi
 
-echo -e "${GREEN}We create https://github.com/${GITHUBORG}/click-odoo-${PROJECT}, commit and push ...\n${NC}"
+echo -e "${GREEN}We create https://github.com/${githuborg}/click-odoo-${project}, commit and push ...\n${NC}"
 
-git remote rename origin scaffold
-git create "${GITHUBORG}/click-odoo-${PROJECT}"
+git remote rename origin scaffold || true
+hub create "${githuborg}/click-odoo-${project}"
 
 # Git commit
 git add .
 git commit -m "Customize Project"
-git push "${GITHUBORG}" origin
+git push --set-upstream origin master
 
+
+echo -e "${GREEN}We let tox manage all virtual environemnts ...\n${NC}"
+if [ ! $(which tox) ]; then
+	echo -e "${RED}Seems we need to install \`tox\` first\n${NC}"
+	sudo -H -k pip install tox
+fi
+
+
+echo -e "${GREEN}We need to make sure you have 2.7 & 3.6 python ...\n${NC}"
+sudo -k apt-get install python2.7 python2.7-dev python3.6 python3.6-dev
+
+
+echo -e "${GREEN}Now we finally tox your environment ...\n${NC}"
+echo -e "${RED}That might take a little while.\n${NC}"
+tox
+
+echo -e "${RED}If you want to execute tests locally with \`tox\`,\n"
+echo -e "you need to make sure the current user can execute \`createdb\`\n"
+echo -e "against a local postgres cluster.${NC}"

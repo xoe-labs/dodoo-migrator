@@ -4,8 +4,8 @@ click-odoo-{{ PROJECT }}
 .. image:: https://img.shields.io/badge/license-LGPL--3-blue.svg
    :target: http://www.gnu.org/licenses/lgpl-3.0-standalone.html
    :alt: License: LGPL-3
-.. image:: https://badge.fury.io/py/click-odoo-{{ PROJECT }}.svg
-    :target: http://badge.fury.io/py/click-odoo-{{ PROJECT }}
+.. image:: https://badge.fury.io/py/click-odoo-.svg
+    :target: http://badge.fury.io/py/click-odoo-
 
 ``click-odoo-{{ PROJECT }}`` is a set of useful Odoo maintenance functions.
 They are available as CLI scripts (based on click-odoo_), as well
@@ -15,7 +15,7 @@ as composable python functions.
 
 Script [EXAMPLE - Put output of `--help` here]
 ~~~~~~
-.. code::
+.. code:: bash
 
   Usage: click-odoo-initdb [OPTIONS]
 
@@ -62,8 +62,8 @@ Script [EXAMPLE - Put output of `--help` here]
 Useful links
 ~~~~~~~~~~~~
 
-- pypi page: https://pypi.org/project/click-odoo-{{ PROJECT }}
-- code repository: https://github.com/{{ GITHUBORG }}/click-odoo-{{ PROJECT }}
-- report issues at: https://github.com/{{ GITHUBORG }}/click-odoo-{{ PROJECT }}/issues
+- pypi page: https://pypi.org/project/click-odoo-
+- code repository: https://github.com//click-odoo-
+- report issues at: https://github.com//click-odoo-/issues
 
 .. _click-odoo: https://pypi.python.org/pypi/click-odoo
