@@ -41,11 +41,42 @@ _logger = logging.getLogger(__name__)
 # excellent docs.
 # -------------------------------------
 
-def main(env):
-    """ Main description of the command.
+
+@click.command()
+@click_odoo.env_options(default_log_level='warn',
+                        with_rollback=False)
+@click.option('--file', '-f', default='.migrations.yaml',
+              show_default=True, type=click.File('rb', lazy=True),
+              help="The yaml file containing the migration steps.")
+@click.option('--row/--no-row', default=False, show_default=True,
+              help="Run more than one version upgrade at once in a row.")
+@click.option('--force', type=str, required=False,
+              help="Force upgrade of a version, even if it has already "
+                   "been applied. Implies `--row`-flag.")
+@click.option('--odoo-upgrade/--no-odoo-upgrade',
+              default=False, show_default=True,
+              help="Use Odoo SA's upgrade service. "
+                   "License code is retrieved from the database itself.")
+@click.option('--metrics/--no-metrics',
+              default=False, show_default=True,
+              help="Expose prometheus metrics endpoint for migration progress. "
+                   "Can be consumed by a status page or monitoring solution.")
+def main(env, file, row, force, odoo_upgrade):
+    """ Apply migration paths specified by a descriptive yaml migration file.
+
+    Persists applied migrations within the target database.
+
+    Connects to Odoo SA's migration service and can be run idempotently to
+    check for results. Before uploading, can apply special before-steps. Once
+    results are avialable, proceeds with remaining migration steps as specified
+    by the migration file.
+
+    A prometheus metrics enpoint is intrumented into the script. This can be
+    scraped by a monitoring solution or a status page.
     """
+
+    if force and not row:
+        row = True
     pass
-
-
 if __name__ == '__main__':  # pragma: no cover
     main()
