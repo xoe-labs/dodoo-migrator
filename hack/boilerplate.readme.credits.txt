@@ -4,17 +4,18 @@ Credits
 
 Contributors:
 
-- Stéphane Bidoul (ACSONE_)
-- Thomas Binsfeld (ACSONE_)
-- Benjamin Willig (ACSONE_)
+- Guewen Baconnier (CAMPTOCAMP_)
+- Leonardo Pistone (CAMPTOCAMP_)
+- David Arnold (XOE_)
 
-.. _ACSONE: https://acsone.eu
+.. _CAMPTOCAMP: https://www.camptocamp.com
+.. _XOE: https://xoe.solutions
 
 Maintainer
 ~~~~~~~~~~
 
-.. image:: https://www.acsone.eu/logo.png
-   :alt: ACSONE SA/NV
-   :target: https://www.acsone.eu
+.. image:: https://xoe.solutions/logo.png
+   :alt: XOE Corp. SAS
+   :target: https://xoe.solutions
 
-This project is maintained by ACSONE SA/NV.
+This project is maintained by XOE Corp. SAS.

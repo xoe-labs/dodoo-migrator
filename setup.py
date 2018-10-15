@@ -8,8 +8,8 @@ from setuptools import setup, find_packages
 here = os.path.abspath(os.path.dirname(__file__))
 
 setup(
-    name='click-odoo-{{ PROJECT }}',
-    description='click-odoo {{ PROJECT }} script',
+    name='click-odoo-migrator',
+    description='click-odoo migrator script',
     long_description='\n'.join((
         open(os.path.join(here, 'README.rst')).read(),
         open(os.path.join(here, 'CHANGES.rst')).read(),
@@ -23,9 +23,9 @@ setup(
         'click-odoo>=1.0.0',
     ],
     license='LGPLv3+',
-    author='{{ PACKAGE_AUTHOR }}',
-    author_email='{{ PACKAGE_AUTHOR_EMAIL }}',
-    url='http://github.com/{{ GITHUBORG }}/click-odoo-{{ PROJECT }}',
+    author='XOE Labs',
+    author_email='info@xoe.solutions',
+    url='http://github.com/xoe-labs/click-odoo-migrator',
     classifiers=[
         'Development Status :: 4 - Beta',
         'Intended Audience :: Developers',
@@ -39,6 +39,6 @@ setup(
     ],
     entry_points='''
         [console_scripts]
-        click-odoo-{{ PROJECT }}=src.{{ PROJECT }}:main
+        click-odoo-migrator=src.migrator:main
     ''',
 )
