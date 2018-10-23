@@ -22,7 +22,7 @@ def _init_odoo_db(dbname, test_addons_dir=None):
     cmd = [
         odoo_bin,
         '-d', dbname,
-        '-i', 'base',
+        # '-i', 'base',
         '--stop-after-init',
     ]
     if test_addons_dir:

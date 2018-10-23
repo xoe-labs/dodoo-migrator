@@ -12,3 +12,6 @@ pytest
 configparser
 
 # Additional, project deps
+pyyaml
+semver
+markdown==2.5.1

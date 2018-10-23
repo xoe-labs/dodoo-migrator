@@ -1,0 +1,5 @@
+--- !Migration
+version: '0.1.2'
+app_version: '10.0'
+uninstall:
+- board

@@ -1,0 +1,9 @@
+--- !Migration
+version: '0.0.3'
+app_version: '10.0'
+--- !Migration
+version: '0.0.1'
+app_version: '10.0'
+--- !Migration
+version: '0.0.2'
+app_version: '10.0'
