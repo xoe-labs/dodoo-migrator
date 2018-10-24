@@ -3,10 +3,13 @@
 from __future__ import print_function
 
 import sys
-import ConfigParser
+try:
+    import ConfigParser as configparser
+except ImportError:
+    import configparser
 
 
-CONFIG = ConfigParser.ConfigParser()
+CONFIG = configparser.ConfigParser()
 CONFIG.readfp(sys.stdin)
 
 ENV = []
