@@ -10,20 +10,19 @@ NC='\033[0m' # No Color
 SNIPPET="""
 jobs:
   include:
-    matrix:
-    - stage: deploy
-      python: 3.6
-      if: tag IS present
-      deploy:
-        provider: pypi
-        user: \"{{ PYPI_USER }}\"
-        passwrod:
-          secure: "\$PYPI_TOKEN"
-        distributions: \"sdist bdist_wheel\"
-        skip_upload_docs: true
-        on:
-          repo: \"{{ GITHUBORG }}/click-odoo-{{ PROJECT }}\"
-          tags: true
+  - stage: deploy
+    python: 3.6
+    if: tag IS present
+    deploy:
+      provider: pypi
+      user: \"{{ PYPI_USER }}\"
+      passwrod:
+        secure: "\$PYPI_TOKEN"
+      distributions: \"sdist bdist_wheel\"
+      skip_upload_docs: true
+      on:
+        repo: \"{{ GITHUBORG }}/click-odoo-{{ PROJECT }}\"
+        tags: true
 """
 
 
