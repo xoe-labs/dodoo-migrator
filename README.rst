@@ -1,11 +1,11 @@
 click-odoo-migrator
-==================
+===================
 
 .. image:: https://img.shields.io/badge/license-LGPL--3-blue.svg
    :target: http://www.gnu.org/licenses/lgpl-3.0-standalone.html
    :alt: License: LGPL-3
-.. image:: https://badge.fury.io/py/click-odoo-.svg
-    :target: http://badge.fury.io/py/click-odoo-
+.. image:: https://badge.fury.io/py/click-odoo-migrator.svg
+    :target: http://badge.fury.io/py/click-odoo-migrator
 
 ``click-odoo-migrator`` is a set of useful Odoo maintenance functions.
 They are available as CLI scripts (based on click-odoo_), as well
@@ -13,58 +13,61 @@ as composable python functions.
 
 .. contents::
 
-Script [EXAMPLE - Put output of `--help` here]
+Script
 ~~~~~~
 .. code:: bash
 
-  Usage: click-odoo-initdb [OPTIONS]
+  Usage: click-odoo-migrator [OPTIONS]
 
-    Create an Odoo database with pre-installed modules.
+    Apply migration paths specified by a descriptive yaml migration file.
 
-    Almost like standard Odoo does with the -i option, except this script
-    manages a cache of database templates with the exact same addons
-    installed. This is particularly useful to save time when initializing test
-    databases.
+    Persists applied migrations within the target database.
 
-    Cached templates are identified by computing a sha1 checksum of modules
-    provided with the -m option, including their dependencies and
-    corresponding auto_install modules.
+    Connects to Odoo SA's migration service and can be run idempotently to
+    check for results. Before uploading, can apply special before-steps. Once
+    results are avialable, proceeds with remaining migration steps as
+    specified by the migration file.
+
+    A prometheus metrics endpoint is instrumented into the script. This can be
+    scraped by a monitoring solution or a status page.
 
   Options:
-    -c, --config PATH         ...
-    ...
-    -n, --new-database TEXT   Name of new database to create, possibly from
-			      cache. If absent, only the cache trimming
-			      operation is executed.
-    -m, --modules TEXT        Comma separated list of addons to install.
-			      [default: base]
-    --demo / --no-demo        Load Odoo demo data.  [default: True]
-    --cache / --no-cache      Use a cache of database templates with the exact
-			      same addons installed. Disabling this option also
-			      disables all other cache-related operations such
-			      as max-age or size. Note: when the cache is
-			      enabled, all attachments created during database
-			      initialization are stored in database instead of
-			      the default Odoo file store.  [default: True]
-    --cache-prefix TEXT       Prefix to use when naming cache template databases
-			      (max 8 characters). CAUTION: all databases named
-			      like {prefix}-____________-% will eventually be
-			      dropped by the cache control mechanism, so choose
-			      the prefix wisely.  [default: cache]
-    --cache-max-age INTEGER   Drop cache templates that have not been used for
-			      more than N days. Use -1 to disable.  [default:
-			      30]
-    --cache-max-size INTEGER  Keep N most recently used cache templates. Use -1
-			      to disable. Use 0 to empty cache.  [default: 5]
-    --help                    Show this message and exit.
+    -c, --config FILE              Specify the Odoo configuration file. Other
+                                   ways to provide it are with the ODOO_RC or
+                                   OPENERP_SERVER environment variables, or
+                                   ~/.odoorc (Odoo >= 10) or
+                                   ~/.openerp_serverrc.
+    -d, --database TEXT            Specify the database name. If present, this
+                                   parameter takes precedence over the database
+                                   provided in the Odoo configuration file.
+    --log-level TEXT               Specify the logging level. Accepted values
+                                   depend on the Odoo version, and include
+                                   debug, info, warn, error.  [default: warn]
+    --logfile FILE                 Specify the log file.
+    -f, --file FILENAME            The yaml file containing the migration steps.
+                                   [default: .migrations.yaml]
+    -m, --mig-directory DIRECTORY  A migration directory shim. Layout after
+                                   Odoo's migrationfolders within their named
+                                   module folders.Tipp: Can supply base
+                                   migration scripts.
+    --since PARSE                  Specify the version (excluded), to start
+                                   from. If not specified, start from the latest
+                                   applied version onwards.
+    --until PARSE                  Specify the the target version, to which to
+                                   migrate. If not specified, migrate up to the
+                                   latest version.
+    --metrics / --no-metrics       Prometheus metrics endpoint for migration
+                                   progress. Can be consumed by a status page or
+                                   monitoring solution.  [default: False]
+    --help                         Show this message and exit.
 
 
 Useful links
 ~~~~~~~~~~~~
 
-- pypi page: https://pypi.org/project/click-odoo-
-- code repository: https://github.com//click-odoo-
-- report issues at: https://github.com//click-odoo-/issues
+- pypi page: https://pypi.org/project/click-odoo-migrator
+- code repository: https://github.com//click-odoo-migrator
+- report issues at: https://github.com//click-odoo-migrator/issues
 
 .. _click-odoo: https://pypi.python.org/pypi/click-odoo
 
@@ -83,7 +86,7 @@ Contributors:
 Maintainer
 ~~~~~~~~~~
 
-.. image:: https://xoe.solutions/logo.png
+.. image:: https://erp.xoe.solutions/logo.png
    :alt: XOE Corp. SAS
    :target: https://xoe.solutions
 

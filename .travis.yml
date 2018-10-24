@@ -3,10 +3,11 @@ cache: pip
 addons:
   postgresql: '9.6'
 python:
-  - 2.7
-  - 3.5
-  - 3.6
+- 2.7
+- 3.5
+- 3.6
 env:
+  matrix:
   - ODOO="8.0"
   - ODOO="9.0"
   - ODOO="10.0"
@@ -15,28 +16,43 @@ env:
   - ODOO="master"
 matrix:
   exclude:
-    - env: ODOO="8.0"
-      python: 3.5
-    - env: ODOO="8.0"
-      python: 3.6
-    - env: ODOO="9.0"
-      python: 3.5
-    - env: ODOO="9.0"
-      python: 3.6
-    - env: ODOO="10.0"
-      python: 3.5
-    - env: ODOO="10.0"
-      python: 3.6
-    - env: ODOO="11.0"
-      python: 2.7
-    - env: ODOO="12.0"
-      python: 2.7
-    - env: ODOO="master"
-      python: 2.7
+  - env: ODOO="8.0"
+    python: 3.5
+  - env: ODOO="8.0"
+    python: 3.6
+  - env: ODOO="9.0"
+    python: 3.5
+  - env: ODOO="9.0"
+    python: 3.6
+  - env: ODOO="10.0"
+    python: 3.5
+  - env: ODOO="10.0"
+    python: 3.6
+  - env: ODOO="11.0"
+    python: 2.7
+  - env: ODOO="12.0"
+    python: 2.7
+  - env: ODOO="master"
+    python: 2.7
 install:
-  - pip install tox-travis
-  - pip install codecov
+- pip install tox-travis
+- pip install codecov
 script:
-  - tox
+- tox
 after_success:
-  - codecov
+- codecov
+jobs:
+  include:
+  - stage: deploy
+    python: 3.6
+    if: tag IS present
+    deploy:
+      provider: pypi
+      user: xoe-labs
+      password:
+        secure: fdAVsZoJQNd6TBqm+pv2TkY8V/F7edl3w4P2RQF1ReK6oVzfAqQgLSCWjalxnm6ko/IvAU9II5eUspHjXAEM7BF4O0djEJpyXe3pYA6uUluyXs5c5rPDbhw2la2axFsPQWkyvry3Y9/laKPwAqbRB/LjFBo3Z47Rw2+9P3isjQxTqgOL84Nl4ueYTjS6mehRTNa1q6Y0oY87aqyaFnjQ0LgVbVcLY35avcIlTO8OzBcPeYW5PSVi16rwNYsyCai7aR9JkCQRzooMI17Aiu2d+qVORvMvO2iFF0MyGMSibpuczf3f58xEvd3N+S0D3//iawD+2n4SQUD+hIByO/3yNRkgBiUb9Q2q7ZxkEDwAdblGkjYHRbhzZ/1NeFc1T7hlc+2OiOk35Ob8LMDtRK2vmTFA+utd+hJIc8cVKTSF+f33Dh9/OUcxQAFJdPk7zHVig4Ppe7+dt3BbexuAoz8HVDvtHaigYJyooDxd2dg9t1KX9Hk1b+SFSqVz4njvO9Gpz8sTSgF0ganX+up8RI96C98Zv8v4rX5oMQoVmzCKX7mga5PKohILhk36l3LGbEOV2moE3N+PDWxUVNAvsjqTlj+7RG7NfCcW5p865fgCU4GNYbXzzGIfFIkdZSTuO43zjGEJmBmJwuXHZstLJSllKbgNbPCSdYb3cH9NSJeT8Pw=
+      distributions: sdist bdist_wheel
+      skip_upload_docs: true
+      on:
+        repo: xoe-labs/click-odoo-migrator
+        tags: true
