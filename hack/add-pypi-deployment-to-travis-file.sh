@@ -42,4 +42,4 @@ echo "${SNIPPET}" >> .travis.yml
 read -rp "PyPI password (will be mask with travis): " PYPI_PASSWORD
 
 
-travis encrypt "${PYPI_PASSWORD}" --add jobs.include.0.deploy.password
+travis encrypt "${PYPI_PASSWORD}" --com --add jobs.include.0.deploy.password
