@@ -27,7 +27,8 @@ from click_odoo import odoo
 from odoo import release, SUPERUSER_ID
 try:
     from odoo.addons.base.models.ir_module import MyWriter
-except ImportError:  # < 12
+except ImportError:
+    # Odoo < 12.0
     from odoo.addons.base.module.module import MyWriter
 from odoo.modules.module import get_module_path
 from odoo.modules.registry import Registry
@@ -792,9 +793,9 @@ def update_field_references(cr, old, new, only_models=None):
         :param list only_models: list of models affected by the fieldname change
     """
     p = {
-        'old': '\y{}\y'.format(old),
+        'old': r'\y{}\y'.format(old),
         'new': new,
-        'def_old': '\ydefault_{}\y'.format(old),
+        'def_old': r'\ydefault_{}\y'.format(old),
         'def_new': 'default_{}'.format(new),
         'models': tuple(only_models) if only_models else (),
     }

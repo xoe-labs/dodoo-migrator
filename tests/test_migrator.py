@@ -25,7 +25,7 @@ import os
 import subprocess
 
 from click.testing import CliRunner
-# from click_odoo import odoo
+from click_odoo import odoo
 
 from src.migrator import main
 
@@ -85,17 +85,18 @@ def test_migrator_operations(odoodb, odoocfg):
     # Assert that mail is uninstalled.
     assert result == b' uninstalled\n\n'
 
-    # Test remove (via odoo.migration package)
-    result = CliRunner().invoke(main, [
-        '-d', odoodb,
-        '-c', str(odoocfg),
-        '--file', DATADIR + ".mig-0.1.3-remove.yaml",
-    ])
-    assert result.exit_code == 0
-    result = _exec_query(
-        odoodb, "SELECT 1 FROM ir_module_module WHERE name='board'")
-    # Assert board has been removed from module index.
-    assert result == b'\n'
+    if odoo.release.version_info[0] >= 10:
+        # Test remove (via odoo.migration package)
+        result = CliRunner().invoke(main, [
+            '-d', odoodb,
+            '-c', str(odoocfg),
+            '--file', DATADIR + ".mig-0.1.3-remove.yaml",
+        ])
+        assert result.exit_code == 0
+        result = _exec_query(
+            odoodb, "SELECT 1 FROM ir_module_module WHERE name='board'")
+        # Assert board has been removed from module index.
+        assert result == b'\n'
 
 
 def test_database_advisory_lock(odoodb, odoocfg):

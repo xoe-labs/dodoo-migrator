@@ -2,7 +2,7 @@
 # Copyright 2018-2018 XOE Corp. SAS
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
 
-from __future__ import print_function
+from __future__ import print_function, absolute_import
 
 import os
 import glob
@@ -10,9 +10,60 @@ import logging
 
 from click_odoo import odoo
 
-from odoo.modules.migration import MigrationManager, load_script
-from odoo.tools.parse_version import parse_version
-from odoo.modules.module import get_resource_path
+# We need to adopt this strange pattern, as in p27 the import resolution would
+# be fooled by the src.odoo package, meant to blend in with the odoo namespace
+# from odoo import ... would not use real odoo, but src.odoo in py27
+MigrationManager = odoo.modules.migration.MigrationManager  # noqa
+parse_version = odoo.tools.parse_version  # noqa
+try:
+    load_script = odoo.modules.migration.load_script  # noqa
+except AttributeError:
+    # Odoo <= 10.0
+    import imp
+
+    def load_script(path, module_name):
+        fp, fname = odoo.tools.file_open(path, pathinfo=True)
+        fp2 = None
+
+        # pylint: disable=file-builtin,undefined-variable
+        if not isinstance(fp, file):  # noqa: F821
+            # imp.load_source need a real file object, so we create
+            # one from the file-like object we get from file_open
+            fp2 = os.tmpfile()
+            fp2.write(fp.read())
+            fp2.seek(0)
+
+        try:
+            return imp.load_source(module_name, fname, fp2 or fp)
+        finally:
+            if fp:
+                fp.close()
+            if fp2:
+                fp2.close()
+
+try:
+    get_resource_path = odoo.modules.module.get_resource_path  # noqa
+except AttributeError:  # Odoo < 9.0
+
+    get_module_path = odoo.modules.module.get_module_path  # noqa
+
+    def get_resource_path(module, *args):
+        """Return the full path of a resource of the given module.
+        :param module: module name
+        :param list(str) args: resource path components within module
+        :rtype: str
+        :return: absolute path to the resource
+        TODO make it available inside on osv object (self.get_resource_path)
+        """
+        mod_path = get_module_path(module)
+        if not mod_path:
+            return False
+        resource_path = os.path.join(mod_path, *args)
+        if os.path.isdir(mod_path):
+            # the module is a directory - ignore zip behavior
+            if os.path.exists(resource_path):
+                return resource_path
+        return False
 
 from .migrator import get_additional_mig_path
 
@@ -46,7 +97,8 @@ class ExtendedMigrationManager(MigrationManager):
             }
 
         for pkg in self.graph:
-            if not (hasattr(pkg, 'update') or pkg.state == 'to upgrade' or
+            if not (hasattr(pkg, 'update') or  # noqa: W504
+                    pkg.state == 'to upgrade'or  # noqa: W504
                     getattr(pkg, 'load_state', None) == 'to upgrade'):
                 continue
 

@@ -9,14 +9,18 @@ import semver
 import datetime
 import logging
 import yaml
+import sys
 
 from click_odoo import odoo
-from ..odoo import migration
+
 from .exceptions import ParseError, MigrationErrorUnfinished, MigrationErrorGap
 from .database import MigrationTable
 
+if odoo.release.version_info[0] >= 10:
+    from ..odoo import migration
+else:
+    migration = None
 
-import sys
 PY3 = sys.version_info[0] == 3
 string_type = str if PY3 else basestring   # noqa
 
@@ -35,7 +39,7 @@ install:
 - document
 uninstall:
 - project
-remove:
+remove:  # Only supported since Odoo 10.0
 - removed_code
 
 --- !Migration
@@ -117,6 +121,10 @@ class Migration(yaml.YAMLObject):
         The only use case is, if you completely drop a module without
         replacement. In case of a replacement, include this cleanup into the
         target's migration script or conditional init hoook."""
+        if not migration:
+            _logger.warning(
+                "remove operation is not supported for Odoo < 10.0.")
+            return
         for name in self.remove:
             with env.registry.cursor() as cr:
                 migration.remove_module(cr, name)
@@ -125,8 +133,12 @@ class Migration(yaml.YAMLObject):
         """ Run the actual migration """
         self._mark(env)
         env.reset()
-        odoo.modules.registry.Registry.new(
-            env.registry.db_name, update_module='migration')
+        try:
+            odoo.modules.registry.Registry.new(
+                env.registry.db_name, update_module='migration')
+        except AttributeError:  # Odoo <= 9.0
+            odoo.modules.registry.RegistryManager.new(
+                env.registry.db_name, update_module='migration')
         self._remove(env)
         return env
 

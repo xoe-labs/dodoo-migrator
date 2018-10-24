@@ -21,6 +21,9 @@ setup(
     ],
     install_requires=[
         'click-odoo>=1.0.0',
+        'pyyaml==3.13',
+        'semver==2.8.1',
+        'markdown==2.5.1',
     ],
     license='LGPLv3+',
     author='XOE Labs',
