@@ -43,16 +43,16 @@ after_success:
 - codecov
 jobs:
   include:
-  - stage: deploy
-    python: 3.6
-    if: tag IS present
-    deploy:
-      provider: pypi
-      user: xoe-labs
-      password:
-        secure: fdAVsZoJQNd6TBqm+pv2TkY8V/F7edl3w4P2RQF1ReK6oVzfAqQgLSCWjalxnm6ko/IvAU9II5eUspHjXAEM7BF4O0djEJpyXe3pYA6uUluyXs5c5rPDbhw2la2axFsPQWkyvry3Y9/laKPwAqbRB/LjFBo3Z47Rw2+9P3isjQxTqgOL84Nl4ueYTjS6mehRTNa1q6Y0oY87aqyaFnjQ0LgVbVcLY35avcIlTO8OzBcPeYW5PSVi16rwNYsyCai7aR9JkCQRzooMI17Aiu2d+qVORvMvO2iFF0MyGMSibpuczf3f58xEvd3N+S0D3//iawD+2n4SQUD+hIByO/3yNRkgBiUb9Q2q7ZxkEDwAdblGkjYHRbhzZ/1NeFc1T7hlc+2OiOk35Ob8LMDtRK2vmTFA+utd+hJIc8cVKTSF+f33Dh9/OUcxQAFJdPk7zHVig4Ppe7+dt3BbexuAoz8HVDvtHaigYJyooDxd2dg9t1KX9Hk1b+SFSqVz4njvO9Gpz8sTSgF0ganX+up8RI96C98Zv8v4rX5oMQoVmzCKX7mga5PKohILhk36l3LGbEOV2moE3N+PDWxUVNAvsjqTlj+7RG7NfCcW5p865fgCU4GNYbXzzGIfFIkdZSTuO43zjGEJmBmJwuXHZstLJSllKbgNbPCSdYb3cH9NSJeT8Pw=
-      distributions: sdist bdist_wheel
-      skip_upload_docs: true
-      on:
-        repo: xoe-labs/click-odoo-migrator
-        tags: true
+    - stage: deploy
+      python: 3.6
+      if: tag IS present
+      deploy:
+        provider: pypi
+        distributions: sdist bdist_wheel
+        user: xoe-labs
+        password:
+          secure: "Tt4THeTjPG3imxXeoA+HKs5jpMvtT3zSlGUEY5KBGc8wod/BLDPzyNtdEfOpho2SVj6Mc4VxdyzVqQZyqfcpNUOMTXIkV12ZlW/JFUpg1XGOVwVBhJyJswcZZ1zKtizvFumJ8WnF159qfDhx5WVGabTz6Ls6dr1hmmxisD26h1FhhRuR1Y28BEuQbgJsqcVvIJyLbzmuHjD9XoHIZB9s9H+yPkXj+V3tC1Dom5F/giSaW7C2fK34bvgiAqlXbKU99R+8lFUMjvRB2v5XI+JoWj2SQKl5mj5YFA7K3IHFcHQ4Qe2gBJWccKbj+RjKfu0cvhPnZZudzGB+z1AX477h6E31mSvkeG2ISWTAYtML7hKENszjh40/xLeOWuqcB+lHATNo1LWZ3pY8ogEB8u5nqJPx7reEPpGirVuu0v5y2+VPTeG9SVrul4nJEc3sRt+dzfZi4GR/WvaxOip4rCvZNqK7qbd6OdvjCII7KtlrrfTMCSimprjuN7au3yYp+SOlEAT2X8CBXRWuqMqSjjUSBDF9k1UucPNTJlpntVatpm9BpEJHQikLRsJZT3BhVPqXhYswfHgwfirirWO6lIp7y3BRSPMGeG44HbeUOrfofG6ievo8rj2PpZfVoGIujECJFGMbxd4K9CW85lAtZry6/bm9yiKrQ9hkcWInBbBom3U="
+        skip_upload_docs: true
+        on:
+          repo: xoe-labs/click-odoo-migrator
+          tags: true
