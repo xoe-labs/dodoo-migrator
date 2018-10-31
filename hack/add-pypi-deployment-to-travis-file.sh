@@ -8,11 +8,8 @@ GREEN='\033[0;32m'
 NC='\033[0m' # No Color
 
 SNIPPET="""
-jobs:
-  include:
   - stage: deploy
     python: 3.6
-    if: tag IS present
     deploy:
       provider: pypi
       user: \"{{ PYPI_USER }}\"
