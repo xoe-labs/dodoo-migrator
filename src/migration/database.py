@@ -4,19 +4,15 @@
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
 
 import json
-
-
 from collections import namedtuple
 
 
 class MigrationTable(object):
-
     def __init__(self, env):
         self.env = env
-        self.table_name = 'click_odoo_migrator'
+        self.table_name = "click_odoo_migrator"
         self.VersionRecord = namedtuple(
-            'VersionRecord',
-            'number app_version date_start date_done operations'
+            "VersionRecord", "number app_version date_start date_done operations"
         )
         self._versions = None
         self._create_if_not_exists()
@@ -33,7 +29,9 @@ class MigrationTable(object):
 
                 CONSTRAINT version_pk PRIMARY KEY (number)
             );
-            """.format(self.table_name)
+            """.format(
+                self.table_name
+            )
             cursor.execute(query)
 
     def versions(self):
@@ -51,7 +49,9 @@ class MigrationTable(object):
                    date_done,
                    operations
             FROM {}
-            """.format(self.table_name)
+            """.format(
+                self.table_name
+            )
             cursor.execute(query)
             rows = cursor.fetchall()
             versions = []
@@ -59,9 +59,7 @@ class MigrationTable(object):
                 row = list(row)
                 # convert 'operations' to json
                 row[4] = json.loads(row[4]) if row[4] else []
-                versions.append(
-                    self.VersionRecord(*row)
-                )
+                versions.append(self.VersionRecord(*row))
             self._versions = versions
         return self._versions
 
@@ -71,7 +69,9 @@ class MigrationTable(object):
             INSERT INTO {}
             (number, app_version, date_start)
             VALUES (%s, %s, %s)
-            """.format(self.table_name)
+            """.format(
+                self.table_name
+            )
             cursor.execute(query, (version, app_version, timestamp))
         self._versions = None  # reset versions cache
 
@@ -82,7 +82,8 @@ class MigrationTable(object):
             SET date_done = %s,
                 operations = %s
             WHERE number = %s
-            """.format(self.table_name)
-            cursor.execute(query, (
-                timestamp, json.dumps(operations), version))
+            """.format(
+                self.table_name
+            )
+            cursor.execute(query, (timestamp, json.dumps(operations), version))
             self._versions = None  # reset versions cache

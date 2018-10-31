@@ -6,14 +6,14 @@ repos:
     -   id: black
         language_version: python3.6
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: 526904b1596ea461616a7b8b20ebd959454b57fc
+    rev: v2.0.0
     hooks:
     -   id: trailing-whitespace
     -   id: end-of-file-fixer
     # -   id: check-yaml
     -   id: debug-statements
     -   id: flake8
-        additional_dependencies: ["flake8-bugbear == 18.8.0"]
+        additional_dependencies: ["flake8-bugbear == 18.8.0", "flake8-per-file-ignores"]
         language_version: python3.6
 -   repo: https://github.com/asottile/pyupgrade
     rev: v1.8.0

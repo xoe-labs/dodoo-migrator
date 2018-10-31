@@ -23,12 +23,12 @@
 from __future__ import print_function
 
 import logging
-import time
 import threading
-import semver
-import click
+import time
 
+import click
 import click_odoo
+import semver
 
 from . import migration
 
@@ -57,13 +57,12 @@ def get_additional_mig_path():
 
 
 def pg_advisory_lock(cursor, lock_ident):
-    cursor.execute('SELECT pg_try_advisory_xact_lock(%s);', (lock_ident,))
+    cursor.execute("SELECT pg_try_advisory_xact_lock(%s);", (lock_ident,))
     acquired = cursor.fetchone()[0]
     return acquired
 
 
 class ApplicationLock(threading.Thread):
-
     def __init__(self, cr):
         self.acquired = False
         self.cr = cr
@@ -78,8 +77,7 @@ class ApplicationLock(threading.Thread):
         # the advisory lock. The others will be flagged as 'replica'.
         while not pg_advisory_lock(self.cr, ADVISORY_LOCK_IDENT):
             if not self.replica:  # print only the first time
-                _logger.WARN('A concurrent process is already '
-                             'running the migration')
+                _logger.WARN("A concurrent process is already " "running the migration")
             self.replica = True
             time.sleep(0.5)
         else:
@@ -138,25 +136,44 @@ def migrate(env, file, since, until):
 
 
 @click.command()
-@click_odoo.env_options(default_log_level='warn', with_rollback=False)
-@click.option('--file', '-f', default='.migrations.yaml',
-              show_default=True, type=click.File('rb', lazy=True),
-              help="The yaml file containing the migration steps.")
-@click.option('--mig-directory', '-m',
-              type=click.Path(exists=True, file_okay=False),
-              help="A migration directory shim. Layout after Odoo's migration"
-                   "folders within their named module folders."
-                   "Tipp: Can supply base migration scripts.")
-@click.option('--since', type=semver.VersionInfo.parse, required=False,
-              help="Specify the version (excluded), to start from. If not "
-                   "specified, start from the latest applied version onwards.")
-@click.option('--until', type=semver.VersionInfo.parse, required=False,
-              help="Specify the the target version, to which to migrate. If "
-                   "not specified, migrate up to the latest version.")
-@click.option('--metrics/--no-metrics',
-              default=False, show_default=True,
-              help="Prometheus metrics endpoint for migration progress. "
-                   "Can be consumed by a status page or monitoring solution.")
+@click_odoo.env_options(default_log_level="warn", with_rollback=False)
+@click.option(
+    "--file",
+    "-f",
+    default=".migrations.yaml",
+    show_default=True,
+    type=click.File("rb", lazy=True),
+    help="The yaml file containing the migration steps.",
+)
+@click.option(
+    "--mig-directory",
+    "-m",
+    type=click.Path(exists=True, file_okay=False),
+    help="A migration directory shim. Layout after Odoo's migration"
+    "folders within their named module folders."
+    "Tipp: Can supply base migration scripts.",
+)
+@click.option(
+    "--since",
+    type=semver.VersionInfo.parse,
+    required=False,
+    help="Specify the version (excluded), to start from. If not "
+    "specified, start from the latest applied version onwards.",
+)
+@click.option(
+    "--until",
+    type=semver.VersionInfo.parse,
+    required=False,
+    help="Specify the the target version, to which to migrate. If "
+    "not specified, migrate up to the latest version.",
+)
+@click.option(
+    "--metrics/--no-metrics",
+    default=False,
+    show_default=True,
+    help="Prometheus metrics endpoint for migration progress. "
+    "Can be consumed by a status page or monitoring solution.",
+)
 def main(env, file, mig_directory, since, until, metrics):
     """ Apply migration paths specified by a descriptive yaml migration file.
 
@@ -176,5 +193,5 @@ def main(env, file, mig_directory, since, until, metrics):
     migrate(env, file, since, until)
 
 
-if __name__ == '__main__':  # pragma: no cover
+if __name__ == "__main__":  # pragma: no cover
     main()

@@ -32,13 +32,14 @@ from src.migrator import main
 # from ..utils import manifest, gitutils
 
 HERE = os.path.dirname(__file__)
-DATADIR = os.path.join(HERE, 'data/test_migrator/')
-MIG_TABLE = 'click_odoo_migrator'
+DATADIR = os.path.join(HERE, "data/test_migrator/")
+MIG_TABLE = "click_odoo_migrator"
 
 
 def _exec_query(dbname, query):
     process = subprocess.Popen(
-        ['psql', '-d', dbname, '-t', '-c', query], stdout=subprocess.PIPE)
+        ["psql", "-d", dbname, "-t", "-c", query], stdout=subprocess.PIPE
+    )
     out, _ = process.communicate()
     return out
 
@@ -46,57 +47,84 @@ def _exec_query(dbname, query):
 def test_mig_sorting(odoodb, odoocfg):
     """ Test if migrations are sorted properly """
 
-    result = CliRunner().invoke(main, [
-        '-d', odoodb,
-        '-c', str(odoocfg),
-        '--file', DATADIR + ".mig-0.0.x-sorting.yaml"
-    ])
+    result = CliRunner().invoke(
+        main,
+        [
+            "-d",
+            odoodb,
+            "-c",
+            str(odoocfg),
+            "--file",
+            DATADIR + ".mig-0.0.x-sorting.yaml",
+        ],
+    )
     assert result.exit_code == 0
     result = _exec_query(odoodb, "SELECT number FROM {}".format(MIG_TABLE))
     # Assert that log entries are create in the right order.
-    assert result == b' 0.0.1\n 0.0.2\n 0.0.3\n\n'
+    assert result == b" 0.0.1\n 0.0.2\n 0.0.3\n\n"
 
 
 def test_migrator_operations(odoodb, odoocfg):
     """ Test all migrator operations """
 
     # Test install, upgrade
-    result = CliRunner().invoke(main, [
-        '-d', odoodb,
-        '-c', str(odoocfg),
-        '--file', DATADIR + ".mig-0.1.1-upgrade-install.yaml",
-    ])
+    result = CliRunner().invoke(
+        main,
+        [
+            "-d",
+            odoodb,
+            "-c",
+            str(odoocfg),
+            "--file",
+            DATADIR + ".mig-0.1.1-upgrade-install.yaml",
+        ],
+    )
     assert result.exit_code == 0
 
     result = _exec_query(
-        odoodb, "SELECT state FROM ir_module_module WHERE name='board'")
+        odoodb, "SELECT state FROM ir_module_module WHERE name='board'"
+    )
     # Assert that mail is installed.
-    assert result == b' installed\n\n'
+    assert result == b" installed\n\n"
 
     # Test uninstall
-    result = CliRunner().invoke(main, [
-        '-d', odoodb,
-        '-c', str(odoocfg),
-        '--file', DATADIR + ".mig-0.1.2-uninstall.yaml",
-    ])
+    result = CliRunner().invoke(
+        main,
+        [
+            "-d",
+            odoodb,
+            "-c",
+            str(odoocfg),
+            "--file",
+            DATADIR + ".mig-0.1.2-uninstall.yaml",
+        ],
+    )
     assert result.exit_code == 0
     result = _exec_query(
-        odoodb, "SELECT state FROM ir_module_module WHERE name='board'")
+        odoodb, "SELECT state FROM ir_module_module WHERE name='board'"
+    )
     # Assert that mail is uninstalled.
-    assert result == b' uninstalled\n\n'
+    assert result == b" uninstalled\n\n"
 
     if odoo.release.version_info[0] >= 10:
         # Test remove (via odoo.migration package)
-        result = CliRunner().invoke(main, [
-            '-d', odoodb,
-            '-c', str(odoocfg),
-            '--file', DATADIR + ".mig-0.1.3-remove.yaml",
-        ])
+        result = CliRunner().invoke(
+            main,
+            [
+                "-d",
+                odoodb,
+                "-c",
+                str(odoocfg),
+                "--file",
+                DATADIR + ".mig-0.1.3-remove.yaml",
+            ],
+        )
         assert result.exit_code == 0
         result = _exec_query(
-            odoodb, "SELECT 1 FROM ir_module_module WHERE name='board'")
+            odoodb, "SELECT 1 FROM ir_module_module WHERE name='board'"
+        )
         # Assert board has been removed from module index.
-        assert result == b'\n'
+        assert result == b"\n"
 
 
 def test_database_advisory_lock(odoodb, odoocfg):

@@ -5,16 +5,16 @@
 
 from __future__ import print_function
 
-import semver
 import datetime
 import logging
-import yaml
 import sys
 
+import semver
+import yaml
 from click_odoo import odoo
 
-from .exceptions import ParseError, MigrationErrorUnfinished, MigrationErrorGap
 from .database import MigrationTable
+from .exceptions import MigrationErrorGap, MigrationErrorUnfinished, ParseError
 
 if odoo.release.version_info[0] >= 10:
     from ..odoo import migration
@@ -22,12 +22,12 @@ else:
     migration = None
 
 PY3 = sys.version_info[0] == 3
-string_type = str if PY3 else basestring   # noqa
+string_type = str if PY3 else basestring  # noqa
 
 _logger = logging.getLogger(__name__)
 
-MIG_SERVICES = ('odoo', 'oca')
-MIG_OPERATIONS = ('upgrade', 'install', 'uninstall', 'remove', 'service')
+MIG_SERVICES = ("odoo", "oca")
+MIG_OPERATIONS = ("upgrade", "install", "uninstall", "remove", "service")
 
 YAML_EXAMPLE = u"""
 --- !Migration
@@ -64,8 +64,9 @@ upgrade:  # Executed after migration service
 
 class Migration(yaml.YAMLObject):
     """ A single migration defined by a YAML document """
-    __slots__ = ('version', 'app_version') + MIG_OPERATIONS
-    yaml_tag = u'!Migration'
+
+    __slots__ = ("version", "app_version") + MIG_OPERATIONS
+    yaml_tag = u"!Migration"
 
     def __setstate__(self, data):
         """ yaml.load_all does call __setstate__, but not __init__ """
@@ -74,12 +75,19 @@ class Migration(yaml.YAMLObject):
     # Note: sets are not json serializable
 
     def __init__(
-            self, version=None, app_version=None, upgrade=None, install=None,
-            uninstall=None, remove=None, service=None):
+        self,
+        version=None,
+        app_version=None,
+        upgrade=None,
+        install=None,
+        uninstall=None,
+        remove=None,
+        service=None,
+    ):
         self.version = semver.parse_version_info(version)
         self.app_version = app_version
-        self.upgrade = self._validate_modules(upgrade, 'upgrade')
-        self.install = self._validate_modules(install, 'install')
+        self.upgrade = self._validate_modules(upgrade, "upgrade")
+        self.install = self._validate_modules(install, "install")
         self.uninstall = list(set(uninstall)) if uninstall else []
         self.remove = list(set(remove)) if remove else []
         self.service = self._validate_service(service)
@@ -88,8 +96,9 @@ class Migration(yaml.YAMLObject):
     def _validate_modules(obj, key):
         if obj is None:
             return []
-        message = ("`{}` key accepts a list of modules that is present in "
-                   "addons paths.").format(key)
+        message = (
+            "`{}` key accepts a list of modules that is present in " "addons paths."
+        ).format(key)
         if not (obj and all(isinstance(elem, string_type) for elem in obj)):
             raise ParseError(message, YAML_EXAMPLE)
         # TODO: Check if modules are present in source code
@@ -100,7 +109,8 @@ class Migration(yaml.YAMLObject):
         if obj is None:
             return None
         message = "`service` key accepts one of as string: {}".format(
-            ', '.join(MIG_SERVICES))
+            ", ".join(MIG_SERVICES)
+        )
         if obj not in MIG_SERVICES:
             raise ParseError(message, YAML_EXAMPLE)
         return obj
@@ -108,13 +118,13 @@ class Migration(yaml.YAMLObject):
     def _mark(self, env):
         """ Mark operations of this migration in the provided environment """
         with env.registry.cursor() as cursor:
-            imm = env(cr=cursor)['ir.module.module']
+            imm = env(cr=cursor)["ir.module.module"]
             for name in self.upgrade:
-                imm.search([('name', '=', name)]).button_upgrade()
+                imm.search([("name", "=", name)]).button_upgrade()
             for name in self.install:
-                imm.search([('name', '=', name)]).button_install()
+                imm.search([("name", "=", name)]).button_install()
             for name in self.uninstall:
-                imm.search([('name', '=', name)]).button_uninstall()
+                imm.search([("name", "=", name)]).button_uninstall()
 
     def _remove(self, env):
         """ Cleanup module from ir.module.module
@@ -122,8 +132,7 @@ class Migration(yaml.YAMLObject):
         replacement. In case of a replacement, include this cleanup into the
         target's migration script or conditional init hoook."""
         if not migration:
-            _logger.warning(
-                "remove operation is not supported for Odoo < 10.0.")
+            _logger.warning("remove operation is not supported for Odoo < 10.0.")
             return
         for name in self.remove:
             with env.registry.cursor() as cr:
@@ -135,10 +144,12 @@ class Migration(yaml.YAMLObject):
         env.reset()
         try:
             odoo.modules.registry.Registry.new(
-                env.registry.db_name, update_module='migration')
+                env.registry.db_name, update_module="migration"
+            )
         except AttributeError:  # Odoo <= 9.0
             odoo.modules.registry.RegistryManager.new(
-                env.registry.db_name, update_module='migration')
+                env.registry.db_name, update_module="migration"
+            )
         self._remove(env)
         return env
 
@@ -154,9 +165,9 @@ class MigrationSpec(object):
     environment. """
 
     def __init__(self, env, stream, since, until):
-        self.migrations = sorted({
-            mig for mig in yaml.load_all(stream)},
-            key=lambda m: m.version)
+        self.migrations = sorted(
+            {mig for mig in yaml.load_all(stream)}, key=lambda m: m.version
+        )
         self.mig_table = MigrationTable(env)
         self.env = env
         self.since = since
@@ -166,29 +177,41 @@ class MigrationSpec(object):
         return mig.version in self._get_finished_vers()
 
     def _get_finished_vers(self):
-        return sorted({semver.parse_version_info(v.number) for v
-                       in self.mig_table.versions()
-                       if v.date_done})
+        return sorted(
+            {
+                semver.parse_version_info(v.number)
+                for v in self.mig_table.versions()
+                if v.date_done
+            }
+        )
 
     def _get_unfinished_vers(self):
-        return sorted({semver.parse_version_info(v.number) for v
-                       in self.mig_table.versions()
-                       if not v.date_done})
+        return sorted(
+            {
+                semver.parse_version_info(v.number)
+                for v in self.mig_table.versions()
+                if not v.date_done
+            }
+        )
 
     def _get_todo_migrations(self):
         if self.since and self.until:
+
             def _condition(mig):
                 return mig.version > self.since and mig.version <= self.until
 
         elif self.since:
+
             def _condition(mig):
                 return mig.version > self.since
 
         elif self.until:
+
             def _condition(mig):
                 return mig.version <= self.until and not self._is_applied(mig)
 
         else:
+
             def _condition(mig):
                 return not self._is_applied(mig)
 
@@ -200,38 +223,40 @@ class MigrationSpec(object):
         """ Execute all applicable migrations from the spec """
         unfinished_v = self._get_unfinished_vers()
         if unfinished_v:
-            strfmt = (u','.join(unfinished_v))
+            strfmt = u",".join(unfinished_v)
             _logger.error("migrations %s are in unfinished state.", strfmt)
             raise MigrationErrorUnfinished(strfmt)
 
         if self.since and self.since not in self._get_finished_vers():
             _logger.error(
                 "last migration %s not at par with %s.",
-                self._get_finished_vers()[-1], self.since)
+                self._get_finished_vers()[-1],
+                self.since,
+            )
             raise MigrationErrorGap(self._get_finished_vers()[-1], self.since)
 
         for mig in self._get_todo_migrations():
             # In case of --since dating to already applied verions
             if self._is_applied(mig):
                 _logger.info(
-                    u'migration %s is already applied - nothing to do.',
-                    (mig.version,))
+                    u"migration %s is already applied - nothing to do.", (mig.version,)
+                )
                 continue
 
             self.mig_table.start(
-                str(mig.version),
-                mig.app_version,
-                datetime.datetime.now())
+                str(mig.version), mig.app_version, datetime.datetime.now()
+            )
 
             if mig.is_noop():
                 _logger.info(
-                    u'migration %s is a non operation - only register bump.',
-                    (mig.version,))
+                    u"migration %s is a non operation - only register bump.",
+                    (mig.version,),
+                )
             else:
                 mig.run(self.env)
 
             self.mig_table.finish(
                 str(mig.version),
                 datetime.datetime.now(),
-                {op: getattr(mig, op) for op in MIG_OPERATIONS}
+                {op: getattr(mig, op) for op in MIG_OPERATIONS},
             )
