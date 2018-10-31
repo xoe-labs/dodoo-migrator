@@ -2,6 +2,11 @@ language: python
 cache: pip
 addons:
   postgresql: '9.6'
+stages:
+  - name: linting
+  - name: test
+  - name: deploy
+    if: tag IS present
 python:
 - 2.7
 - 3.5
@@ -34,14 +39,6 @@ matrix:
     python: 2.7
   - env: ODOO="master"
     python: 2.7
-jobs:
-  include:
-  - stage: linting
-    python: 3.6
-    env: TOXENV=pre_commit
-  - stage: linting
-    python: 3.6
-    env: TOXENV=check_readme
 install:
 - pip install tox-travis
 - pip install codecov
@@ -51,9 +48,14 @@ after_success:
 - codecov
 jobs:
   include:
+    - stage: linting
+      python: 3.6
+      env: TOXENV=pre_commit
+    - stage: linting
+      python: 3.6
+      env: TOXENV=check_readme
     - stage: deploy
       python: 3.6
-      if: tag IS present
       deploy:
         provider: pypi
         distributions: sdist bdist_wheel
