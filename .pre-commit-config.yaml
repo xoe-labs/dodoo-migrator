@@ -6,7 +6,7 @@ repos:
     -   id: black
         language_version: python3.6
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: 526904b1596ea461616a7b8b20ebd959454b57fc
+    rev: v2.0.0
     hooks:
     -   id: trailing-whitespace
     -   id: end-of-file-fixer
