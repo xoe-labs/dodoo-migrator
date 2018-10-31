@@ -34,6 +34,14 @@ matrix:
     python: 2.7
   - env: ODOO="master"
     python: 2.7
+jobs:
+  include:
+  - stage: linting
+    python: 3.6
+    env: TOXENV=pre_commit
+  - stage: linting
+    python: 3.6
+    env: TOXENV=check_readme
 install:
 - pip install tox-travis
 - pip install codecov
