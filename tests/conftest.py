@@ -2,6 +2,7 @@
 # License LGPL-3.0 or later (http://www.gnu.org/licenses/lgpl.html).
 
 import os
+import os.path as path
 import subprocess
 import textwrap
 
@@ -12,6 +13,8 @@ from click_odoo import odoo, odoo_bin
 # stdout is not compatible with the Odoo logging initialization
 # mechanism. Logging is therefore tested with subprocesses.
 odoo.netsvc._logger_init = True
+
+DB_PREFIX = path.basename(path.abspath(path.join(__file__, "../.."))).replace(".", "_")
 
 
 def _init_odoo_db(dbname, test_addons_dir=None):
@@ -34,7 +37,7 @@ def _drop_db(dbname):
 
 @pytest.fixture(scope="module")
 def odoodb(request):
-    dbname = "click-odoo-contrib-test-{}".format(odoo.release.version_info[0])
+    dbname = (DB_PREFIX + "-test-{}").format(odoo.release.version_info[0])
     test_addons_dir = getattr(request.module, "test_addons_dir", "")
     _init_odoo_db(dbname, test_addons_dir)
     try:
