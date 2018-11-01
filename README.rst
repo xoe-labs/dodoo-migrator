@@ -32,18 +32,6 @@ Script
     scraped by a monitoring solution or a status page.
 
   Options:
-    -c, --config FILE              Specify the Odoo configuration file. Other
-                                   ways to provide it are with the ODOO_RC or
-                                   OPENERP_SERVER environment variables, or
-                                   ~/.odoorc (Odoo >= 10) or
-                                   ~/.openerp_serverrc.
-    -d, --database TEXT            Specify the database name. If present, this
-                                   parameter takes precedence over the database
-                                   provided in the Odoo configuration file.
-    --log-level TEXT               Specify the logging level. Accepted values
-                                   depend on the Odoo version, and include
-                                   debug, info, warn, error.  [default: warn]
-    --logfile FILE                 Specify the log file.
     -f, --file FILENAME            The yaml file containing the migration steps.
                                    [default: .migrations.yaml]
     -m, --mig-directory DIRECTORY  A migration directory shim. Layout after
@@ -59,6 +47,18 @@ Script
     --metrics / --no-metrics       Prometheus metrics endpoint for migration
                                    progress. Can be consumed by a status page or
                                    monitoring solution.  [default: False]
+    --logfile FILE                 Specify the log file.
+    -d, --database TEXT            Specify the database name. If present, this
+                                   parameter takes precedence over the database
+                                   provided in the Odoo configuration file.
+    --log-level TEXT               Specify the logging level. Accepted values
+                                   depend on the Odoo version, and include
+                                   debug, info, warn, error.  [default: info]
+    -c, --config FILE              Specify the Odoo configuration file. Other
+                                   ways to provide it are with the ODOO_RC or
+                                   OPENERP_SERVER environment variables, or
+                                   ~/.odoorc (Odoo >= 10) or
+                                   ~/.openerp_serverrc.
     --help                         Show this message and exit.
 
 
