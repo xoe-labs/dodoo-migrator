@@ -19,7 +19,10 @@ setup(
     use_scm_version=True,
     packages=find_packages(),
     setup_requires=["setuptools-scm"],
-    install_requires=["click-odoo>=1.0.0"],
+    install_requires=["click-odoo>=2.0.0.rc2"],
+    dependency_links=[
+        "git+https://github.com/xoe-labs/click-odoo.git@2.0.0#egg=click-odoo"
+    ],
     license="LGPLv3+",
     author="{{ PACKAGE_AUTHOR }}",
     author_email="{{ PACKAGE_AUTHOR_EMAIL }}",
