@@ -1,13 +1,13 @@
-click-odoo-migrator
-===================
+dodoo-migrator
+==============
 
 .. image:: https://img.shields.io/badge/license-LGPL--3-blue.svg
    :target: http://www.gnu.org/licenses/lgpl-3.0-standalone.html
    :alt: License: LGPL-3
-.. image:: https://badge.fury.io/py/click-odoo-migrator.svg
-    :target: http://badge.fury.io/py/click-odoo-migrator
+.. image:: https://badge.fury.io/py/dodoo-migrator.svg
+    :target: http://badge.fury.io/py/dodoo-migrator
 
-``click-odoo-migrator`` is a set of useful Odoo maintenance functions.
+``dodoo-migrator`` is a set of useful Odoo maintenance functions.
 They are available as CLI scripts (based on click-odoo_), as well
 as composable python functions.
 
@@ -17,7 +17,7 @@ Script
 ~~~~~~
 .. code:: bash
 
-  Usage: click-odoo-migrator [OPTIONS]
+  Usage: dodoo-migrator [OPTIONS]
 
     Apply migration paths specified by a descriptive yaml migration file.
 
@@ -65,9 +65,9 @@ Script
 Useful links
 ~~~~~~~~~~~~
 
-- pypi page: https://pypi.org/project/click-odoo-migrator
-- code repository: https://github.com//click-odoo-migrator
-- report issues at: https://github.com//click-odoo-migrator/issues
+- pypi page: https://pypi.org/project/dodoo-migrator
+- code repository: https://github.com//dodoo-migrator
+- report issues at: https://github.com//dodoo-migrator/issues
 
 .. _click-odoo: https://pypi.python.org/pypi/click-odoo
 

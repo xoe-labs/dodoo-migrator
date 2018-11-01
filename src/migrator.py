@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 #
-# This file is part of the click-odoo-migrator (R) project.
+# This file is part of the dodoo-migrator (R) project.
 # Copyright (c) 2018 Camptocamp SA and XOE Corp. SAS
 # Authors: Guewen Baconnier, Leonardo Pistone, David Arnold, et al.
 #

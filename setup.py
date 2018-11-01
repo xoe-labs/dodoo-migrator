@@ -8,8 +8,8 @@ from setuptools import find_packages, setup
 here = os.path.abspath(os.path.dirname(__file__))
 
 setup(
-    name="click-odoo-migrator",
-    description="click-odoo migrator script",
+    name="dodoo-migrator",
+    description="dodoo migrator script",
     long_description="\n".join(
         (
             open(os.path.join(here, "README.rst")).read(),
@@ -31,7 +31,7 @@ setup(
     license="LGPLv3+",
     author="XOE Labs",
     author_email="info@xoe.solutions",
-    url="http://github.com/xoe-labs/click-odoo-migrator",
+    url="http://github.com/xoe-labs/dodoo-migrator",
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
@@ -45,6 +45,6 @@ setup(
     ],
     entry_points="""
         [console_scripts]
-        click-odoo-migrator=src.migrator:main
+        dodoo-migrator=src.migrator:main
     """,
 )

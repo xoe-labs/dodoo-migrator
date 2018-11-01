@@ -64,5 +64,5 @@ jobs:
           secure: "Tt4THeTjPG3imxXeoA+HKs5jpMvtT3zSlGUEY5KBGc8wod/BLDPzyNtdEfOpho2SVj6Mc4VxdyzVqQZyqfcpNUOMTXIkV12ZlW/JFUpg1XGOVwVBhJyJswcZZ1zKtizvFumJ8WnF159qfDhx5WVGabTz6Ls6dr1hmmxisD26h1FhhRuR1Y28BEuQbgJsqcVvIJyLbzmuHjD9XoHIZB9s9H+yPkXj+V3tC1Dom5F/giSaW7C2fK34bvgiAqlXbKU99R+8lFUMjvRB2v5XI+JoWj2SQKl5mj5YFA7K3IHFcHQ4Qe2gBJWccKbj+RjKfu0cvhPnZZudzGB+z1AX477h6E31mSvkeG2ISWTAYtML7hKENszjh40/xLeOWuqcB+lHATNo1LWZ3pY8ogEB8u5nqJPx7reEPpGirVuu0v5y2+VPTeG9SVrul4nJEc3sRt+dzfZi4GR/WvaxOip4rCvZNqK7qbd6OdvjCII7KtlrrfTMCSimprjuN7au3yYp+SOlEAT2X8CBXRWuqMqSjjUSBDF9k1UucPNTJlpntVatpm9BpEJHQikLRsJZT3BhVPqXhYswfHgwfirirWO6lIp7y3BRSPMGeG44HbeUOrfofG6ievo8rj2PpZfVoGIujECJFGMbxd4K9CW85lAtZry6/bm9yiKrQ9hkcWInBbBom3U="
         skip_upload_docs: true
         on:
-          repo: xoe-labs/click-odoo-migrator
+          repo: xoe-labs/dodoo-migrator
           tags: true
