@@ -50,7 +50,7 @@ jobs:
   include:
   - stage: linting
     python: 3.6
-    env: TOXENV=pre_commit
+    env: TOXENV=pre-commit
   - stage: linting
     python: 3.6
-    env: TOXENV=check_readme
+    env: TOXENV=check-readme
