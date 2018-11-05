@@ -66,8 +66,8 @@ Useful links
 ~~~~~~~~~~~~
 
 - pypi page: https://pypi.org/project/dodoo-migrator
-- code repository: https://github.com//dodoo-migrator
-- report issues at: https://github.com//dodoo-migrator/issues
+- code repository: https://github.com/xoe-labs/dodoo-migrator
+- report issues at: https://github.com/xoe-labs/dodoo-migrator/issues
 
 .. _click-odoo: https://pypi.python.org/pypi/click-odoo
 
