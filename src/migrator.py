@@ -137,7 +137,7 @@ def migrate(env, file, since, until):
 
 @click.command(
     cls=click_odoo.CommandWithOdooEnv,
-    env_options={"with_rollback": False},
+    env_options={"with_rollback": False, "with_addons_path": True},
     default_overrides={"log_level": "warn"},
 )
 @click.option(
