@@ -2,6 +2,12 @@
 # Copyright 2018-2018 XOE Corp. SAS
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
 
+
+#
+# THIS FILE IS A 1:1 RE IMPLEMENTATION OF THE ODOO MIGRATION MANAGER WITH ONLY
+# ONE DIFFERENCE: Allow to *lay over* a migration folder layout.
+#
+
 from __future__ import absolute_import, print_function
 
 import glob
