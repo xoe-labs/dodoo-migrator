@@ -1,0 +1,12 @@
+model_renames:  # Cave: Not MODULE_renames
+  model.number.one: becomes.other.model
+  model.number.two: becomes.merged.model
+  model.number.three: becomes.merged.model
+
+field_renames:
+  prior.model.field_name: new.model.field_name
+  prior.model.country_id: new.model.country_id
+
+field_ignores:  # Ignored in both, old and new schema
+-  model.name.ignored_field1_name
+-  model.name.ignored_field2_id
