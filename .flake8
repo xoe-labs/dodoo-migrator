@@ -13,6 +13,7 @@ per-file-ignores =
   src/migration_manager.py:C901
   src/analyzer/schema_analyzer/_slots.py:B950
   src/analyzer/schema_analyzer/_transitions.py:B950,E241
+  src/analyzer/data_analyzer/_transitions.py:B950,E241
 exclude =
   ./.git
   .eggs/
