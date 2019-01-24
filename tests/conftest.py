@@ -7,7 +7,7 @@ import subprocess
 import textwrap
 
 import pytest
-from click_odoo import odoo, odoo_bin
+from dodoo import odoo, odoo_bin
 
 # This hack is necessary because the way CliRunner patches
 # stdout is not compatible with the Odoo logging initialization

@@ -4,7 +4,7 @@
 import ast
 import os
 
-from click_odoo import odoo
+from dodoo import odoo
 
 MANIFEST_NAMES = ("__manifest__.py", "__openerp__.py")
 

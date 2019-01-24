@@ -14,7 +14,7 @@ import glob
 import logging
 import os
 
-from click_odoo import odoo
+from dodoo import odoo
 
 from .migrator import get_additional_mig_path
 

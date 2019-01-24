@@ -10,7 +10,7 @@ from collections import namedtuple
 class MigrationTable(object):
     def __init__(self, env):
         self.env = env
-        self.table_name = "click_odoo_migrator"
+        self.table_name = "dodoo_migrator"
         self.VersionRecord = namedtuple(
             "VersionRecord", "number app_version date_start date_done operations"
         )

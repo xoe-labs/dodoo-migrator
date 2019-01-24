@@ -4,7 +4,7 @@
 import os
 
 import pytest
-from click_odoo import odoo
+from dodoo import odoo
 
 from utils import manifest
 

@@ -7,6 +7,10 @@ Future (?)
 - Talk to odoo upgrade service
 - Metrics endpoint (to scrape progress/status)
 
+0.6.0 (2019-01-24)
+------------------
+- Refactor to dodoo plugin
+
 0.5.2 (2018-12-05)
 ------------------
 - Add addons-path option

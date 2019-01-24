@@ -21,7 +21,7 @@ class MigrationErrorUnfinished(_MigrationError):
             u"You may want to restore the backup or to run again the "
             u"migration with the --force flag or to fix it manually "
             u"In that case, you will have to "
-            u"update the  'click_odoo_migrator' table yourself.".format(self.unfinished)
+            u"update the  'dodoo_migrator' table yourself.".format(self.unfinished)
         )
         return msg
 

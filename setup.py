@@ -20,16 +20,13 @@ setup(
     packages=find_packages(),
     setup_requires=["setuptools-scm"],
     install_requires=[
-        "click-odoo>=2.0.0.rc2",
+        "dodoo>=2.0.0.rc2",
         "pyyaml==3.13",
         "semver==2.8.1",
         "markdown==2.5.1",
         "markdown==2.5.1",
         "pyyaml",
         "pandas",
-    ],
-    dependency_links=[
-        "git+https://github.com/xoe-labs/click-odoo.git@2.0.0#egg=click-odoo"
     ],
     license="LGPLv3+",
     author="XOE Labs",
@@ -47,7 +44,7 @@ setup(
         "Framework :: Odoo",
     ],
     entry_points="""
-        [console_scripts]
-        dodoo-migrator=src.migrator:main
+        [core_package.cli_plugins]
+        migrate=src.migrator:migrate
     """,
 )

@@ -25,15 +25,15 @@ import os
 import subprocess
 
 from click.testing import CliRunner
-from click_odoo import odoo
+from dodoo import odoo
 
-from src.migrator import main
+from src.migrator import migrate
 
 # from ..utils import manifest, gitutils
 
 HERE = os.path.dirname(__file__)
 DATADIR = os.path.join(HERE, "data/test_migrator/")
-MIG_TABLE = "click_odoo_migrator"
+MIG_TABLE = "dodoo_migrator"
 
 
 def _exec_query(dbname, query):
@@ -48,7 +48,7 @@ def test_mig_sorting(odoodb, odoocfg):
     """ Test if migrations are sorted properly """
 
     result = CliRunner().invoke(
-        main,
+        migrate,
         [
             "-d",
             odoodb,
@@ -69,7 +69,7 @@ def test_migrator_operations(odoodb, odoocfg):
 
     # Test install, upgrade
     result = CliRunner().invoke(
-        main,
+        migrate,
         [
             "-d",
             odoodb,
@@ -89,7 +89,7 @@ def test_migrator_operations(odoodb, odoocfg):
 
     # Test uninstall
     result = CliRunner().invoke(
-        main,
+        migrate,
         [
             "-d",
             odoodb,
@@ -109,7 +109,7 @@ def test_migrator_operations(odoodb, odoocfg):
     if odoo.release.version_info[0] >= 10:
         # Test remove (via odoo.migration package)
         result = CliRunner().invoke(
-            main,
+            migrate,
             [
                 "-d",
                 odoodb,

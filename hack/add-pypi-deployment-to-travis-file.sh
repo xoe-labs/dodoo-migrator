@@ -18,7 +18,7 @@ SNIPPET="""
       distributions: \"sdist bdist_wheel\"
       skip_upload_docs: true
       on:
-        repo: \"{{ GITHUBORG }}/click-odoo-{{ PROJECT }}\"
+        repo: \"{{ GITHUBORG }}/dodoo-{{ PROJECT }}\"
         tags: true
 """
 

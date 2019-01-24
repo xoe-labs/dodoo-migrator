@@ -23,9 +23,9 @@
 import logging
 
 import click
-import click_odoo
+import dodoo
 
-# from click_odoo import odoo
+# from dodoo import odoo
 
 # from utils import manifest, gitutils
 
@@ -36,7 +36,7 @@ _logger = logging.getLogger(__name__)
 # The click-context is enriched to env,
 # which behaves like an odoo's self.env
 # You might have a look at an example
-# click-odoo pproject to get familiar.
+# dodoo pproject to get familiar.
 # Also, don't forget to consult click's
 # excellent docs.
 # -------------------------------------

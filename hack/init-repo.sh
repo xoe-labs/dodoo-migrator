@@ -39,10 +39,10 @@ fi
 
 source hack/install-hub.sh
 
-echo -e "${GREEN}We create https://github.com/${githuborg}/click-odoo-${project}, commit and push ...\n${NC}"
+echo -e "${GREEN}We create https://github.com/${githuborg}/dodoo-${project}, commit and push ...\n${NC}"
 
 git remote rename origin scaffold || true
-hub create "${githuborg}/click-odoo-${project}"
+hub create "${githuborg}/dodoo-${project}"
 
 # Git commit
 git add .

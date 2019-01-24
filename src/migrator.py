@@ -27,12 +27,12 @@ import threading
 import time
 
 import click
-import click_odoo
+import dodoo
 import semver
 
 from . import migration
 
-# from click_odoo import odoo
+# from dodoo import odoo
 
 # from utils import manifest, gitutils
 
@@ -95,7 +95,7 @@ class ApplicationLock(threading.Thread):
                 time.sleep(0.5)
 
 
-def migrate(env, file, since, until):
+def do_migrate(env, file, since, until):
     """Perform a migration according to file.
 
     :param env: The odoo environment
@@ -135,11 +135,9 @@ def migrate(env, file, since, until):
             lock.join()
 
 
-@click.command(
-    cls=click_odoo.CommandWithOdooEnv,
-    env_options={"with_rollback": False, "with_addons_path": True},
-    default_overrides={"log_level": "warn"},
-)
+@click.command(cls=dodoo.CommandWithOdooEnv)
+@dodoo.options.addons_path_opt(True)
+@dodoo.options.db_opt(True)
 @click.option(
     "--file",
     "-f",
@@ -177,7 +175,7 @@ def migrate(env, file, since, until):
     help="Prometheus metrics endpoint for migration progress. "
     "Can be consumed by a status page or monitoring solution.",
 )
-def main(env, file, mig_directory, since, until, metrics):
+def migrate(env, file, mig_directory, since, until, metrics):
     """ Apply migration paths specified by a descriptive yaml migration file.
 
     Persists applied migrations within the target database.
@@ -193,8 +191,8 @@ def main(env, file, mig_directory, since, until, metrics):
 
     global MIGRATION_SCRIPTS_PATH
     MIGRATION_SCRIPTS_PATH = mig_directory
-    migrate(env, file, since, until)
+    do_migrate(env, file, since, until)
 
 
 if __name__ == "__main__":  # pragma: no cover
-    main()
+    migrate()

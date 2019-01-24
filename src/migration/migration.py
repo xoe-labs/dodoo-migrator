@@ -11,7 +11,7 @@ import sys
 
 import semver
 import yaml
-from click_odoo import odoo
+from dodoo import odoo
 
 from .database import MigrationTable
 from .exceptions import MigrationErrorGap, MigrationErrorUnfinished, ParseError

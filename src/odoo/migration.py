@@ -20,8 +20,8 @@ from textwrap import dedent
 import lxml
 import markdown
 import psycopg2
-from click_odoo import odoo
 from docutils.core import publish_string
+from dodoo import odoo
 from odoo import SUPERUSER_ID, release
 from odoo.api import Environment
 from odoo.modules.module import get_module_path
