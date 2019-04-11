@@ -1,8 +1,6 @@
 --- !Migration
 version: '0.1.1'
 app_version: '10.0'
-upgrade:
-- web
 install:
 - mail
 - board

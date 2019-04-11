@@ -13,6 +13,7 @@ from __future__ import absolute_import, print_function
 import glob
 import logging
 import os
+import sys
 
 from dodoo import odoo
 
@@ -23,18 +24,17 @@ from .migrator import get_additional_mig_path
 # from odoo import ... would not use real odoo, but src.odoo in py27
 MigrationManager = odoo.modules.migration.MigrationManager  # noqa
 parse_version = odoo.tools.parse_version  # noqa
-try:
-    load_script = odoo.modules.migration.load_script  # noqa
-except AttributeError:
-    # Odoo <= 10.0
+
+if sys.version_info[0] == 2:
     import imp
 
     def load_script(path, module_name):
-        fp, fname = odoo.tools.file_open(path, pathinfo=True)
+        fp = open(path, "r")
+        fname = path
         fp2 = None
 
         # pylint: disable=file-builtin,undefined-variable
-        if not isinstance(fp, file):  # noqa: F821
+        if not isinstance(fp, file):  # noqa
             # imp.load_source need a real file object, so we create
             # one from the file-like object we get from file_open
             fp2 = os.tmpfile()
@@ -48,6 +48,16 @@ except AttributeError:
                 fp.close()
             if fp2:
                 fp2.close()
+
+
+else:
+    import importlib.util
+
+    def load_script(path, module_name):
+        spec = importlib.util.spec_from_file_location(module_name, path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
 
 
 try:
@@ -94,14 +104,28 @@ def _get_additional_migration_path(module, *args):
 
 class ExtendedMigrationManager(MigrationManager):
     def _get_files(self):
-        def _get_scripts(path):
-            if not path:
-                return {}
-            return {
-                version: glob.glob1(os.path.join(path, version), "*.py")
-                for version in os.listdir(path)
-                if os.path.isdir(os.path.join(path, version))
-            }
+        def _get_scripts(res, path):
+            for version in os.listdir(path):
+                if not os.path.isdir(os.path.join(path, version)):
+                    continue
+                files = glob.glob1(os.path.join(path, version), "*.py")
+                files.sort()
+                if version not in res:
+                    res[version] = [
+                        os.path.join(path, version) + os.path.sep + f for f in files
+                    ]
+                else:
+                    res[version].append(
+                        [os.path.join(path, version) + os.path.sep + f for f in files]
+                    )
+
+        def get_scripts(default, overlay):
+            res = {}
+            if default:
+                _get_scripts(res, default)
+            if overlay:
+                _get_scripts(res, overlay)
+            return res
 
         for pkg in self.graph:
             if not (
@@ -111,19 +135,15 @@ class ExtendedMigrationManager(MigrationManager):
             ):
                 continue
 
-            module = _get_scripts(get_resource_path(pkg.name, "migrations"))
-            module.update(
-                _get_scripts(_get_additional_migration_path(pkg.name, "migrations"))
+            module = get_scripts(
+                get_resource_path(pkg.name, "migrations"),
+                _get_additional_migration_path(pkg.name, "migrations"),
             )
-            maintenance = _get_scripts(
-                get_resource_path("base", "maintenance", "migrations", pkg.name)
-            )
-            maintenance.update(
-                _get_scripts(
-                    _get_additional_migration_path(
-                        "base", "maintenance", "migrations", pkg.name
-                    )
-                )
+            maintenance = get_scripts(
+                get_resource_path("base", "maintenance", "migrations", pkg.name),
+                _get_additional_migration_path(
+                    "base", "maintenance", "migrations", pkg.name
+                ),
             )
 
             self.migrations[pkg.name] = {"module": module, "maintenance": maintenance}
@@ -134,7 +154,6 @@ class ExtendedMigrationManager(MigrationManager):
         state = (
             pkg.state if stage in ("pre", "post") else getattr(pkg, "load_state", None)
         )
-
         if (
             not (hasattr(pkg, "update") or state == "to upgrade")
             or state == "to install"
@@ -164,12 +183,12 @@ class ExtendedMigrationManager(MigrationManager):
             migrations = self.migrations[pkg.name]
             lst = []
 
-            for src in migrations:
-                if version in src:
-                    for filepath in src[version]:
-                        if not os.path.basename(filepath).startswith(stage + "-"):
+            for _, values in migrations.items():
+                if version in values:
+                    for file in values[version]:
+                        if not os.path.basename(file).startswith(stage + "-"):
                             continue
-                        lst.append(filepath)
+                        lst.append(file)
             lst.sort()
             return lst
 

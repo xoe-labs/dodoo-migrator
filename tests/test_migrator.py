@@ -20,7 +20,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 #
 
-# import mock
+import ast
 import os
 import subprocess
 
@@ -34,6 +34,7 @@ from src.migrator import migrate
 HERE = os.path.dirname(__file__)
 DATADIR = os.path.join(HERE, "data/test_migrator/")
 MIG_TABLE = "dodoo_migrator"
+MANIFEST_NAMES = ("__manifest__.py", "__openerp__.py")
 
 
 def _exec_query(dbname, query):
@@ -76,7 +77,7 @@ def test_migrator_operations(odoodb, odoocfg):
             "-c",
             str(odoocfg),
             "--file",
-            DATADIR + ".mig-0.1.1-upgrade-install.yaml",
+            DATADIR + ".mig-0.1.1-install.yaml",
         ],
     )
     assert result.exit_code == 0
@@ -133,8 +134,71 @@ def test_database_advisory_lock(odoodb, odoocfg):
 
 
 def test_migr_folder_overlay(odoodb, odoocfg):
-    """ Test if migration folder overlay is workging correctly """
-    pass
+    """ Test if migration folder overlay is workging correctly and
+    upgrade scrips"""
+    odoo.tools.config["stop_after_init"] = False
+    found = False
+    for manifest in MANIFEST_NAMES:
+        web_manifest_path = os.path.join(
+            odoo.__path__[0], "..", "addons", "web", manifest
+        )
+        if os.path.isfile(web_manifest_path):
+            found = True
+            break
+    if not found:
+        raise
+
+    with open(web_manifest_path, "r") as f:
+        old_str = f.read()
+        info = ast.literal_eval(old_str)
+        info["version"] = "5.0"
+
+    with open(web_manifest_path, "w") as f:
+        f.write(str(info))
+
+    with open(web_manifest_path, "r") as f:
+        test_str = f.read()
+
+    assert "5.0" in test_str
+
+    result = CliRunner().invoke(
+        migrate,
+        [
+            "-m",
+            DATADIR,
+            "-d",
+            odoodb,
+            "-c",
+            str(odoocfg),
+            "--file",
+            DATADIR + ".mig-0.1.4-upgrade.yaml",
+        ],
+    )
+    with open(web_manifest_path, "w") as f:
+        f.write(old_str)
+
+    assert result.exit_code == 0
+
+    result_pre = _exec_query(
+        odoodb, "SELECT 1 FROM dodoo_test_migrations WHERE name='pre'"
+    )
+    # Assert pre entry has been written.
+    assert result_pre == b"        1\n\n"
+
+    result_post = _exec_query(
+        odoodb, "SELECT 1 FROM dodoo_test_migrations WHERE name='post'"
+    )
+    # Assert post entry has been written.
+    assert result_post == b"        1\n\n"
+
+    if odoo.release.version_info[0] <= 8:
+        return
+
+    result_end = _exec_query(
+        odoodb, "SELECT 1 FROM dodoo_test_migrations WHERE name='end'"
+    )
+    # Assert end entry has been written.
+    assert result_end == b"        1\n\n"
 
 
 def test_name_spaced_mig_module(odoodb, odoocfg):
