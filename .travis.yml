@@ -42,6 +42,7 @@ matrix:
 install:
 - pip install tox-travis
 - pip install codecov
+- pip install pyyaml==3.12
 script:
 - tox
 after_success:
