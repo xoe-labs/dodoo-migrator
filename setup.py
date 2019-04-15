@@ -21,11 +21,10 @@ setup(
     setup_requires=["setuptools-scm"],
     install_requires=[
         "dodoo>=2.0.0.rc2",
-        "pyyaml==3.13",
+        "pyyaml==3.12 ; python_version < '3.7'",
+        "pyyaml==3.13 ; python_version >= '3.7'",
         "semver==2.8.1",
         "markdown==2.5.1",
-        "markdown==2.5.1",
-        "pyyaml",
         "pandas",
     ],
     license="LGPLv3+",
