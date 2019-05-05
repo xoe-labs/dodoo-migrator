@@ -9,7 +9,7 @@ select = C,E,F,W,B,B9
 # W503: line break before binary operator (black behaviour)
 ignore = E203,E501,W503
 per-file-ignores =
-  src/odoo/migration.py:B950,C901
+  odoo/migration.py:B950,C901
   src/migration_manager.py:C901
   src/analyzer/schema_analyzer/_slots.py:B950
   src/analyzer/schema_analyzer/_transitions.py:B950,E241

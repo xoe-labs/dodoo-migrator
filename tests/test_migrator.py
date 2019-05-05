@@ -24,6 +24,7 @@ import ast
 import os
 import subprocess
 
+import pytest
 from click.testing import CliRunner
 from dodoo import odoo
 
@@ -165,7 +166,7 @@ def test_migr_folder_overlay(odoodb, odoocfg):
         migrate,
         [
             "-m",
-            DATADIR,
+            DATADIR + "overlay/",
             "-d",
             odoodb,
             "-c",
@@ -201,6 +202,73 @@ def test_migr_folder_overlay(odoodb, odoocfg):
     assert result_end == b"        1\n\n"
 
 
-def test_name_spaced_mig_module(odoodb, odoocfg):
+def test_pre_and_post_scripts(odoodb, odoocfg):
+    """ Test pre and post scripts are executing properly. """
+    # Test install, upgrade
+    result = CliRunner().invoke(
+        migrate,
+        [
+            "-d",
+            odoodb,
+            "-c",
+            str(odoocfg),
+            "--file",
+            DATADIR + ".mig-0.2.0-pre-post-scripts.yaml",
+        ],
+    )
+    assert result.exit_code == 0
+    result_pre = _exec_query(
+        odoodb,
+        """SELECT udt_name
+                     FROM information_schema.columns
+                    WHERE table_name = 'res_partner'
+                      AND column_name = 'pre_script_column_wo_mig'""",
+    )
+    # Assert end entry has been written.
+    assert result_pre == b" varchar\n\n"
+    result_pre = _exec_query(
+        odoodb,
+        """SELECT udt_name
+                     FROM information_schema.columns
+                    WHERE table_name = 'res_partner'
+                      AND column_name = 'post_script_column_wo_mig'""",
+    )
+    # Assert end entry has been written.
+    assert result_pre == b" varchar\n\n"
+
+
+def test_namespaced_mig_module(odoodb, odoocfg):
     """ Test if name-spaced odoo module is working properly """
-    pass
+    if odoo.release.version_info[0] < 10:
+        pytest.skip("version < 10 does not have the namespaced migration module.")
+    # Test install, upgrade
+    result = CliRunner().invoke(
+        migrate,
+        [
+            "-d",
+            odoodb,
+            "-c",
+            str(odoocfg),
+            "--file",
+            DATADIR + ".mig-0.3.0-pre-post-scripts-using-mig-module.yaml",
+        ],
+    )
+    assert result.exit_code == 0
+    result_pre = _exec_query(
+        odoodb,
+        """SELECT udt_name
+                     FROM information_schema.columns
+                    WHERE table_name = 'res_partner'
+                      AND column_name = 'pre_script_column'""",
+    )
+    # Assert end entry has been written.
+    assert result_pre == b" varchar\n\n"
+    result_pre = _exec_query(
+        odoodb,
+        """SELECT udt_name
+                     FROM information_schema.columns
+                    WHERE table_name = 'res_partner'
+                      AND column_name = 'post_script_column'""",
+    )
+    # Assert end entry has been written.
+    assert result_pre == b" varchar\n\n"

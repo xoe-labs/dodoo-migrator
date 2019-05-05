@@ -22,6 +22,7 @@ import markdown
 import psycopg2
 from docutils.core import publish_string
 from dodoo import odoo
+
 from odoo import SUPERUSER_ID, release
 from odoo.api import Environment
 from odoo.modules.module import get_module_path

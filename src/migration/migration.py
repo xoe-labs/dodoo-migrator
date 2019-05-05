@@ -7,6 +7,7 @@ from __future__ import print_function
 
 import datetime
 import logging
+import os
 import sys
 
 import semver
@@ -17,7 +18,7 @@ from .database import MigrationTable
 from .exceptions import MigrationErrorGap, MigrationErrorUnfinished, ParseError
 
 if odoo.release.version_info[0] >= 10:
-    from ..odoo import migration
+    from odoo import migration
 else:
     migration = None
 
@@ -27,7 +28,15 @@ string_type = str if PY3 else basestring  # noqa
 _logger = logging.getLogger(__name__)
 
 MIG_SERVICES = ("odoo", "oca")
-MIG_OPERATIONS = ("upgrade", "install", "uninstall", "remove", "service")
+MIG_OPERATIONS = (
+    "upgrade",
+    "install",
+    "uninstall",
+    "remove",
+    "service",
+    "pre_scripts",
+    "post_scripts",
+)
 
 YAML_EXAMPLE = u"""
 --- !Migration
@@ -49,6 +58,8 @@ app_version: 10.0
 --- !Migration
 version: 0.9.9  # prepare for migration service
 app_version: 10.0
+pre_scripts:
+- ./migrate/my-pre-script.py
 upgrade:
 - document
 
@@ -58,6 +69,8 @@ app_version: 11.0
 service: 'odoo'  # ['odoo'|'oca'] Migration provider
 upgrade:  # Executed after migration service
 - document
+post_scripts:  # Executed after migration service
+- ./migrate/my-post-script.py
 
 """
 
@@ -83,6 +96,8 @@ class Migration(yaml.YAMLObject):
         uninstall=None,
         remove=None,
         service=None,
+        pre_scripts=None,
+        post_scripts=None,
     ):
         self.version = semver.parse_version_info(version)
         self.app_version = app_version
@@ -91,6 +106,8 @@ class Migration(yaml.YAMLObject):
         self.uninstall = list(set(uninstall)) if uninstall else []
         self.remove = list(set(remove)) if remove else []
         self.service = self._validate_service(service)
+        self.pre_scripts = list(set(pre_scripts)) if pre_scripts else []
+        self.post_scripts = list(set(post_scripts)) if post_scripts else []
 
     @staticmethod
     def _validate_modules(obj, key):
@@ -138,10 +155,19 @@ class Migration(yaml.YAMLObject):
             with env.registry.cursor() as cr:
                 migration.remove_module(cr, name)
 
+    def _run_pre_scripts(self, cr):
+        for script in self.pre_scripts:
+            exec(open(os.path.abspath(script)).read(), {"cr": cr})
+
+    def _run_post_scripts(self, cr):
+        for script in self.post_scripts:
+            exec(open(os.path.abspath(script)).read(), {"cr": cr})
+
     def run(self, env):
         """ Run the actual migration """
         self._mark(env)
         env.reset()
+        self._run_pre_scripts(env.cr)
         try:
             odoo.modules.registry.Registry.new(
                 env.registry.db_name, update_module="migration"
@@ -151,6 +177,7 @@ class Migration(yaml.YAMLObject):
                 env.registry.db_name, update_module="migration"
             )
         self._remove(env)
+        self._run_post_scripts(env.cr)
         return env
 
     def is_noop(self):
