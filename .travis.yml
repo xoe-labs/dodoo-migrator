@@ -1,5 +1,8 @@
 language: python
-cache: pip
+cache:
+  directories:
+  - "$HOME/.cache/pip"
+  - "$HOME/.cache/pre-commit"
 addons:
   postgresql: '9.6'
 stages:
