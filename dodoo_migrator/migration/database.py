@@ -6,14 +6,13 @@
 import json
 from collections import namedtuple
 
+import semver
+
 
 class MigrationTable(object):
     def __init__(self, env):
         self.env = env
         self.table_name = "dodoo_migrator"
-        self.VersionRecord = namedtuple(
-            "VersionRecord", "number app_version date_start date_done operations"
-        )
         self._versions = None
         self._create_if_not_exists()
 
@@ -26,6 +25,7 @@ class MigrationTable(object):
                 date_start TIMESTAMP NOT NULL,
                 date_done TIMESTAMP,
                 operations TEXT,
+                service VARCHAR,
 
                 CONSTRAINT version_pk PRIMARY KEY (number)
             );
@@ -39,6 +39,10 @@ class MigrationTable(object):
 
         The versions are kept in cache for the next reads.
         """
+        VersionRecord = namedtuple(
+            "VersionRecord",
+            "number app_version date_start date_done operations service",
+        )
         if self._versions is not None:
             return self._versions
         with self.env.registry.cursor() as cursor:
@@ -47,7 +51,8 @@ class MigrationTable(object):
                    app_version,
                    date_start,
                    date_done,
-                   operations
+                   operations,
+                   service
             FROM {}
             """.format(
                 self.table_name
@@ -59,20 +64,22 @@ class MigrationTable(object):
                 row = list(row)
                 # convert 'operations' to json
                 row[4] = json.loads(row[4]) if row[4] else []
-                versions.append(self.VersionRecord(*row))
+                # parse number to semver
+                row[0] = semver.parse_version_info(row[0])
+                versions.append(VersionRecord(*row))
             self._versions = versions
         return self._versions
 
-    def start(self, version, app_version, timestamp):
+    def start(self, version, app_version, timestamp, service):
         with self.env.registry.cursor() as cursor:
             query = """
             INSERT INTO {}
-            (number, app_version, date_start)
-            VALUES (%s, %s, %s)
+            (number, app_version, date_start, service)
+            VALUES (%s, %s, %s, %s)
             """.format(
                 self.table_name
             )
-            cursor.execute(query, (version, app_version, timestamp))
+            cursor.execute(query, (version, app_version, timestamp, service))
         self._versions = None  # reset versions cache
 
     def finish(self, version, timestamp, operations):

@@ -14,6 +14,7 @@ import semver
 import yaml
 from dodoo import odoo
 
+from ..upgradeservice import db, errors
 from .database import MigrationTable
 from .exceptions import MigrationErrorGap, MigrationErrorUnfinished, ParseError
 
@@ -249,27 +250,16 @@ class MigrationSpec(object):
         self.env = env
         self.since = since
         self.until = until
+        self.versions = sorted(self.mig_table.versions())
+        self.finished = {v.number for v in filter(lambda v: v.date_done, self.versions)}
+        self.started = {v.number for v in self.versions}
+        self.pending = {
+            v.number
+            for v in filter(lambda v: v.service and not v.date_done, self.versions)
+        }
 
     def _is_applied(self, mig):
-        return mig.version in self._get_finished_vers()
-
-    def _get_finished_vers(self):
-        return sorted(
-            {
-                semver.parse_version_info(v.number)
-                for v in self.mig_table.versions()
-                if v.date_done
-            }
-        )
-
-    def _get_unfinished_vers(self):
-        return sorted(
-            {
-                semver.parse_version_info(v.number)
-                for v in self.mig_table.versions()
-                if not v.date_done
-            }
-        )
+        return mig.version in self.finished
 
     def _get_todo_migrations(self):
         if self.since and self.until:
@@ -298,19 +288,18 @@ class MigrationSpec(object):
 
     def run(self):
         """ Execute all applicable migrations from the spec """
-        unfinished_v = self._get_unfinished_vers()
-        if unfinished_v:
-            strfmt = u",".join(unfinished_v)
-            _logger.error("migrations %s are in unfinished state.", strfmt)
-            raise MigrationErrorUnfinished(strfmt)
 
-        if self.since and self.since not in self._get_finished_vers():
+        if self.since and self.since <= self.finished[-1]:
             _logger.error(
-                "last migration %s not at par with %s.",
-                self._get_finished_vers()[-1],
-                self.since,
+                "last migration %s not at par with %s.", self.finished[-1], self.since
             )
-            raise MigrationErrorGap(self._get_finished_vers()[-1], self.since)
+            raise MigrationErrorGap(self.finished[-1], self.since)
+
+        failed = self.started - self.pending - self.finished
+        if failed:
+            strfmt = u",".join(failed)
+            _logger.error("migrations %s failed.", strfmt)
+            raise MigrationErrorUnfinished(strfmt)
 
         for mig in self._get_todo_migrations():
             # In case of --since dating to already applied verions
@@ -321,10 +310,32 @@ class MigrationSpec(object):
                 )
                 continue
 
-            self.mig_table.start(
-                str(mig.version), mig.app_version, datetime.datetime.now()
-            )
+            # Reconcile migrations through service
+            if mig.version in self.pending:
+                try:
+                    _logger.info(BOLD + u"retrieve from %s." + RESET, mig.service)
+                    db.retrieve(self.env, mig.service)
+                except errors.NotReadyError:
+                    _logger.info(
+                        BOLD + u"%s migration not yet ready." + RESET, mig.service
+                    )
+                    return
+            else:
+                _logger.info(BOLD + u"start migrating to %s." + RESET, mig.version)
+                self.mig_table.start(
+                    str(mig.version),
+                    mig.app_version,
+                    datetime.datetime.now(),
+                    mig.service,
+                )
 
+            if mig.service and mig.version not in self.pending:
+                _logger.info(BOLD + u"submit to %s for migration." + RESET, mig.service)
+                mode = "test"
+                db.submit(self.env, mig.service, mode, mig.app_version)
+                return
+
+            # Apply own migrations
             if mig.is_noop():
                 _logger.info(
                     BOLD
@@ -333,7 +344,6 @@ class MigrationSpec(object):
                     mig.version,
                 )
             else:
-                _logger.info(BOLD + u"start migrating to %s." + RESET, mig.version)
                 mig.run(self.env)
                 _logger.info(
                     BOLD + GREEN + u"finished migrating to %s." + RESET, mig.version
