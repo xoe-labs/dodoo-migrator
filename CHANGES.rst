@@ -7,6 +7,11 @@ Future (?)
 - Talk to odoo upgrade service
 - Metrics endpoint (to scrape progress/status)
 
+0.6.5 (2019-05-05)
+------------------
+- Simplify repo structure
+- Fix package namespace issues
+
 0.6.3 (2019-05-04)
 ------------------
 - Add pre & post scripts
