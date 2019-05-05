@@ -239,8 +239,8 @@ def test_pre_and_post_scripts(odoodb, odoocfg):
 
 def test_namespaced_mig_module(odoodb, odoocfg):
     """ Test if name-spaced odoo module is working properly """
-    if odoo.release.version_info[0] < 10:
-        pytest.skip("version < 10 does not have the namespaced migration module.")
+    if odoo.release.version_info[0] <= 10:
+        pytest.skip("version <= 10 does not have the namespaced migration module.")
     # Test install, upgrade
     result = CliRunner().invoke(
         migrate,

@@ -9,13 +9,13 @@ odoo_dir = sys.argv[2]
 
 def odoo_installed():
     try:
-        import odoo  # noqa
+        from odoo import release  # noqa
 
         return True
     except ImportError:
         # odoo < 10
         try:
-            import openerp  # noqa
+            from openerp import release  # noqa
 
             return True
         except ImportError:

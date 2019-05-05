@@ -17,7 +17,7 @@ from dodoo import odoo
 from .database import MigrationTable
 from .exceptions import MigrationErrorGap, MigrationErrorUnfinished, ParseError
 
-if odoo.release.version_info[0] >= 10:
+if odoo.release.version_info[0] > 10:
     from odoo import migration
 else:
     migration = None
