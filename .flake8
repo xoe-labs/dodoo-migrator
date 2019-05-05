@@ -10,10 +10,10 @@ select = C,E,F,W,B,B9
 ignore = E203,E501,W503
 per-file-ignores =
   odoo/migration/migration.py:B950,C901
-  src/migration_manager.py:C901
-  src/analyzer/schema_analyzer/_slots.py:B950
-  src/analyzer/schema_analyzer/_transitions.py:B950,E241
-  src/analyzer/data_analyzer/_transitions.py:B950,E241
+  dodoo_migrator/migration_manager.py:C901
+  dodoo_migrator/analyzer/schema_analyzer/_slots.py:B950
+  dodoo_migrator/analyzer/schema_analyzer/_transitions.py:B950,E241
+  dodoo_migrator/analyzer/data_analyzer/_transitions.py:B950,E241
 exclude =
   ./.git
   .eggs/

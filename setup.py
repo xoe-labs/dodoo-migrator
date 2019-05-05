@@ -17,7 +17,7 @@ setup(
         )
     ),
     use_scm_version=True,
-    packages=find_packages(),
+    packages=find_packages() + ["odoo.migration"],
     setup_requires=["setuptools-scm"],
     install_requires=[
         "dodoo>=2.0.0.rc2",
@@ -44,6 +44,6 @@ setup(
     ],
     entry_points="""
         [core_package.cli_plugins]
-        migrate=src.migrator:migrate
+        migrate=dodoo_migrator.cli:migrate
     """,
 )

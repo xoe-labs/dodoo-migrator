@@ -28,9 +28,7 @@ import pytest
 from click.testing import CliRunner
 from dodoo import odoo
 
-from src.migrator import migrate
-
-# from ..utils import manifest, gitutils
+from dodoo_migrator.cli import migrate
 
 HERE = os.path.dirname(__file__)
 DATADIR = os.path.join(HERE, "data/test_migrator/")

@@ -32,10 +32,6 @@ import semver
 
 from . import migration
 
-# from dodoo import odoo
-
-# from utils import manifest, gitutils
-
 _logger = logging.getLogger(__name__)
 
 

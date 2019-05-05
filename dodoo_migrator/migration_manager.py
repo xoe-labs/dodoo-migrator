@@ -17,7 +17,7 @@ import sys
 
 from dodoo import odoo
 
-from .migrator import get_additional_mig_path
+from .cli import get_additional_mig_path
 
 # We need to adopt this strange pattern, as in p27 the import resolution would
 # be fooled by the src.odoo package, meant to blend in with the odoo namespace
