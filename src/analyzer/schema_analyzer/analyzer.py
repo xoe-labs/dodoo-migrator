@@ -5,9 +5,10 @@
 import sys
 from collections import OrderedDict
 
-import odoo
 import pandas
 import yaml
+
+import odoo
 
 from ..env import OdooAnalyzerEnvironment
 from ..git import Git
