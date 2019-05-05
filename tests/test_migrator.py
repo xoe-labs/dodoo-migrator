@@ -108,7 +108,7 @@ def test_migrator_operations(odoodb, odoocfg):
     # Assert that mail is uninstalled.
     assert result == b" uninstalled\n\n"
 
-    if odoo.release.version_info[0] >= 10:
+    if odoo.release.version_info[0] > 10:
         # Test remove (via odoo.migration package)
         result = CliRunner().invoke(
             migrate,
