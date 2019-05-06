@@ -14,6 +14,7 @@ per-file-ignores =
   dodoo_migrator/analyzer/schema_analyzer/_slots.py:B950
   dodoo_migrator/analyzer/schema_analyzer/_transitions.py:B950,E241
   dodoo_migrator/analyzer/data_analyzer/_transitions.py:B950,E241
+  tests/data/test_odoo_migration/all_queries_syntax.py:E116,F821
 exclude =
   ./.git
   .eggs/

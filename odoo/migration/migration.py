@@ -22,6 +22,7 @@ import markdown
 import psycopg2
 from docutils.core import publish_string
 from dodoo import odoo
+from psycopg2 import sql
 
 from odoo import SUPERUSER_ID, release
 from odoo.api import Environment
@@ -60,14 +61,17 @@ class MigrationError(Exception):
 def modules_installed(cr, *modules):
     """Check if the provided modules are installed (or about to be)."""
     assert modules
-    cr.execute(
-        """SELECT count(1)
-                    FROM ir_module_module
-                   WHERE name IN %s
-                     AND state IN %s
-               """,
-        [modules, _INSTALLED_MODULE_STATES],
+    _query = sql.SQL(
+        """
+
+        SELECT count(1)
+        FROM ir_module_module
+        WHERE name IN %(names)s
+          AND state IN %(states)s
+
+    """
     )
+    cr.execute(_query, dict(names=modules, states=_INSTALLED_MODULE_STATES))
     return cr.fetchone()[0] == len(modules)
 
 
@@ -85,57 +89,93 @@ def remove_module(cr, module):
     # module need to be currenctly installed and running as deletions
     # are made using orm.
 
-    cr.execute("SELECT id FROM ir_module_module WHERE name=%s", (module,))
+    _query = sql.SQL(
+        """
+
+        SELECT id
+        FROM ir_module_module WHERE name = %(module)s
+
+    """
+    )
+    cr.execute(_query, locals())
     mod_id, = cr.fetchone() or [None]
     if not mod_id:
         return
 
     # delete constraints only owned by this module
-    cr.execute(
-        """SELECT name
-                    FROM ir_model_constraint
-                GROUP BY name
-                  HAVING array_agg(module) = %s""",
-        ([mod_id],),
+    _query = sql.SQL(
+        """
+
+        SELECT name
+        FROM ir_model_constraint
+        GROUP BY name HAVING array_agg(module) = %(mod_ids)s
+
+    """
     )
+    cr.execute(_query, {"mod_ids": [mod_id]})
 
     constraints = tuple(vals[0] for vals in cr.fetchall())
     if constraints:
-        cr.execute(
-            """SELECT table_name, constraint_name
-                        FROM information_schema.table_constraints
-                       WHERE constraint_name IN %s""",
-            (constraints,),
-        )
-        for table, constraint in cr.fetchall():
-            cr.execute(
-                'ALTER TABLE "{}" DROP CONSTRAINT "{}"'.format(table, constraint)
-            )
+        _query = sql.SQL(
+            """
 
-    cr.execute(
-        """DELETE FROM ir_model_constraint
-                        WHERE module=%s
-               """,
-        (mod_id,),
+            SELECT TABLE_NAME,
+                   CONSTRAINT_NAME
+            FROM information_schema.table_constraints
+            WHERE CONSTRAINT_NAME IN %(constraints)s
+
+        """
+        )
+        cr.execute(_query, locals())
+
+        for table, constraint in cr.fetchall():
+            _params = {
+                "table": sql.Identifier(table),
+                "constraint": sql.Identifier(constraint),
+            }
+            _query = sql.SQL(
+                """
+
+                ALTER TABLE {table}
+                DROP CONSTRAINT {constraint}
+
+            """
+            ).format(**_params)
+            cr.execute(_query)
+
+    _query = sql.SQL(
+        """
+
+        DELETE
+        FROM ir_model_constraint
+        WHERE module = %(mod_id)s
+
+    """
     )
+    cr.execute(_query, locals())
 
     # delete data
     model_ids, field_ids, view_ids, menu_ids = (), (), (), ()
-    cr.execute(
-        """SELECT model, array_agg(res_id)
-                    FROM ir_model_data d
-                   WHERE NOT EXISTS (SELECT 1
-                                       FROM ir_model_data
-                                      WHERE id != d.id
-                                        AND res_id = d.res_id
-                                        AND model = d.model
-                                        AND module != d.module)
-                     AND module = %s
-                     AND model != 'ir.module.module'
-                GROUP BY model
-               """,
-        (module,),
+    _query = sql.SQL(
+        """
+
+        SELECT model,
+               array_agg(res_id)
+        FROM ir_model_data d
+        WHERE NOT EXISTS
+            (SELECT 1
+             FROM ir_model_data
+             WHERE id != d.id
+               AND res_id = d.res_id
+               AND model = d.model
+               AND module != d.module)
+          AND module = %(module)s
+          AND model != 'ir.module.module'
+        GROUP BY model
+
+    """
     )
+    cr.execute(_query, locals())
     for model, res_ids in cr.fetchall():
         if model == "ir.model":
             model_ids = tuple(res_ids)
@@ -148,9 +188,17 @@ def remove_module(cr, module):
         else:
             table = table_of_model(cr, model)
             if table_exists(cr, table):
-                cr.execute(
-                    'DELETE FROM "{}" WHERE id IN {}s'.format(table, [tuple(res_ids)])
-                )
+                _params = {"table": sql.Identifier(table)}
+                _query = sql.SQL(
+                    """
+
+                    DELETE
+                    FROM {table}
+                    WHERE id IN %(res_ids)s
+
+                """
+                ).format(**_params)
+                cr.execute(_query, dict(res_ids=tuple(res_ids)))
 
     for view_id in view_ids:
         remove_view(cr, view_id=view_id, deactivate_custom=True, silent=True)
@@ -159,70 +207,142 @@ def remove_module(cr, module):
         remove_menus(cr, menu_ids)
 
     # remove relations
-    cr.execute(
-        """SELECT name
-                    FROM ir_model_relation
-                GROUP BY name
-                  HAVING array_agg(module) = %s""",
-        ([mod_id],),
+    _query = sql.SQL(
+        """
+
+        SELECT name
+        FROM ir_model_relation
+        GROUP BY name HAVING array_agg(module) = %(mod_ids)s
+
+    """
     )
+    cr.execute(_query, {"mod_ids": [mod_id]})
+
     relations = tuple(vals[0] for vals in cr.fetchall())
-    cr.execute("DELETE FROM ir_model_relation WHERE module=%s", (mod_id,))
+
+    _query = sql.SQL(
+        """
+
+        DELETE
+        FROM ir_model_relation
+        WHERE module = %(mod_id)s
+
+    """
+    )
+    cr.execute(_query, locals())
     if relations:
-        cr.execute(
-            """SELECT table_name
-                      FROM information_schema.tables
-                      WHERE table_name IN {}""".format(
-                relations
-            )
+        _query = sql.SQL(
+            """
+
+            SELECT TABLE_NAME
+            FROM information_schema.tables
+            WHERE TABLE_NAME IN %(relations)s
+
+        """
         )
+        cr.execute(_query, locals())
+        # fmt: on
         for (rel,) in cr.fetchall():
-            cr.execute('DROP TABLE "{}" CASCADE'.format(rel))
+            _params = {"rel": sql.Identifier(rel)}
+            _query = sql.SQL(
+                """
+
+            DROP TABLE {rel} CASCADE
+
+            """
+            ).format(**_params)
+            cr.execute(_query)
 
     if model_ids:
-        cr.execute("SELECT model FROM ir_model WHERE id IN %s", [model_ids])
+        _query = sql.SQL(
+            """
+
+            SELECT model
+            FROM ir_model
+            WHERE id IN %(model_ids)s
+
+        """
+        )
+        cr.execute(_query, locals())
         for (model,) in cr.fetchall():
             remove_model(cr, model)
 
     if field_ids:
-        cr.execute(
-            "SELECT model, name FROM ir_model_fields WHERE id IN %s", [field_ids]
+        _query = sql.SQL(
+            """
+
+            SELECT model,
+                   name
+            FROM ir_model_fields
+            WHERE id IN %(field_ids)s
+
+        """
         )
+        cr.execute(_query, locals())
         for model, name in cr.fetchall():
             remove_field(cr, model, name)
 
-    cr.execute(
-        """DELETE FROM ir_model_data
-                  WHERE model='ir.module.module'
-                  AND res_id={}""".format(
-            mod_id
-        )
+    _query = sql.SQL(
+        """
+
+        DELETE
+        FROM ir_model_data
+        WHERE model = 'ir.module.module'
+          AND res_id = %(mod_id)s;
+
+
+        DELETE
+        FROM ir_model_data
+        WHERE module = %(module)s;
+
+
+        DELETE
+        FROM ir_module_module
+        WHERE name = %(module)s;
+
+
+        DELETE
+        FROM ir_module_module_dependency
+        WHERE name = %(module)s;
+
+    """
     )
-    cr.execute("DELETE FROM ir_model_data WHERE module=%s", (module,))
-    cr.execute("DELETE FROM ir_module_module WHERE name=%s", (module,))
-    cr.execute("DELETE FROM ir_module_module_dependency WHERE name=%s", (module,))
+    cr.execute(_query, locals())
 
 
 def rename_module(cr, old, new):
     """Rename a module. Yes, really."""
-    cr.execute("UPDATE ir_module_module SET name={} WHERE name={}".format(new, old))
-    cr.execute(
-        "UPDATE ir_module_module_dependency SET name={} WHERE name={}".format(new, old)
-    )
-    _update_view_key(cr, old, new)
-    cr.execute("UPDATE ir_model_data SET module={} WHERE module={}".format(new, old))
+
     mod_old = "module_" + old
     mod_new = "module_" + new
-    cr.execute(
-        """UPDATE ir_model_data
-                     SET name = {}
-                   WHERE name = {}
-                     AND module = {}
-                     AND model = {}
-               """.format(
-            mod_new, mod_old, "base", "ir.module.module"
-        )
+
+    _query = sql.SQL(
+        """
+
+        UPDATE ir_module_module
+        SET name = %(new)s
+        WHERE name = %(old)s;
+
+
+        UPDATE ir_module_module_dependency
+        SET name = %(new)s
+        WHERE name = %(old)s;
+
+
+        UPDATE ir_model_data
+        SET module = %(new)s
+        WHERE module = %(old)s;
+
+
+        UPDATE ir_model_data
+        SET name = %(mod_new)s
+        WHERE name = %(mod_old)s
+          AND module = 'base'
+          AND model = 'ir.module.module';
+
+    """
     )
+    cr.execute(_query, locals())
 
 
 def merge_module(cr, old, into, tolerant=False):
@@ -235,7 +355,18 @@ def merge_module(cr, old, into, tolerant=False):
                         table (e.g. if the module was released after the
                         creation of the database)
     """
-    cr.execute("SELECT name, id FROM ir_module_module WHERE name IN %s", [(old, into)])
+
+    _query = sql.SQL(
+        """
+
+        SELECT name,
+               id
+        FROM ir_module_module
+        WHERE name IN %(names)s
+
+    """
+    )
+    cr.execute(_query, dict(names=(old, into)))
     mod_ids = dict(cr.fetchall())
 
     if tolerant and old not in mod_ids:
@@ -246,31 +377,38 @@ def merge_module(cr, old, into, tolerant=False):
         return
 
     def _update(table, old, new):
-        cr.execute(
-            """UPDATE ir_model_{0} x
-                         SET module=%s
-                       WHERE module=%s
-                         AND NOT EXISTS(SELECT 1
-                                          FROM ir_model_{0} y
-                                         WHERE y.name = x.name
-                                           AND y.module = %s)
-                   """.format(
-                table
-            ),
-            [new, old, new],
+        _query = sql.SQL(
+            """
+
+            UPDATE ir_model_{table} x
+            SET module = %(new)s
+            WHERE module = %(old)s
+              AND NOT EXISTS
+                (SELECT 1
+                 FROM ir_model_{table} y
+                 WHERE y.name = x.name
+                   AND y.module = %(new)s)
+
+        """.format(
+                table=table
+            )
         )
+        cr.execute(_query, locals())
 
         if table == "data":
-            cr.execute(
+            _query = sql.SQL(
                 """
-                SELECT model, array_agg(res_id)
-                  FROM ir_model_data
-                 WHERE module=%s
-                   AND model NOT LIKE 'ir.model%%'
-              GROUP BY model
-            """,
-                [old],
+
+                SELECT model,
+                       array_agg(res_id)
+                FROM ir_model_data
+                WHERE module = %(old)s
+                  AND model NOT LIKE 'ir.model%%'
+                GROUP BY model
+
+            """
             )
+            cr.execute(_query, locals())
             for model, res_ids in cr.fetchall():
                 # we can assume other records have been moved to xml files of the new module
                 # remove the unnecessary data and let the module update do its job
@@ -283,7 +421,18 @@ def merge_module(cr, old, into, tolerant=False):
                     for r in res_ids:
                         remove_record(cr, (model, r))
 
-        cr.execute("DELETE FROM ir_model_{} WHERE module=%s".format(table), [old])
+        _query = sql.SQL(
+            """
+
+            DELETE
+            FROM ir_model_{table}
+            WHERE module = %(old)s
+
+        """.format(
+                table=table
+            )
+        )
+        cr.execute(_query, locals())
 
     _update("constraint", mod_ids[old], mod_ids[into])
     _update("relation", mod_ids[old], mod_ids[into])
@@ -291,22 +440,35 @@ def merge_module(cr, old, into, tolerant=False):
     _update("data", old, into)
 
     # update dependencies
-    cr.execute(
-        """
-        INSERT INTO ir_module_module_dependency(module_id, name)
-        SELECT module_id, %s
-          FROM ir_module_module_dependency d
-         WHERE name=%s
-           AND NOT EXISTS(SELECT 1
-                            FROM ir_module_module_dependency o
-                           WHERE o.module_id = d.module_id
-                             AND o.name=%s)
-    """,
-        [into, old, into],
-    )
 
-    cr.execute("DELETE FROM ir_module_module WHERE name=%s", [old])
-    cr.execute("DELETE FROM ir_module_module_dependency WHERE name=%s", [old])
+    _query = sql.SQL(
+        """
+
+
+        INSERT INTO ir_module_module_dependency(module_id, name)
+        SELECT module_id,
+               %(into)s
+        FROM ir_module_module_dependency d
+        WHERE name = %(old)s
+          AND NOT EXISTS
+            (SELECT 1
+             FROM ir_module_module_dependency o
+             WHERE o.module_id = d.module_id
+               AND o.name = %(into)s);
+
+
+        DELETE
+        FROM ir_module_module
+        WHERE name = %(old)s;
+
+
+        DELETE
+        FROM ir_module_module_dependency
+        WHERE name = %(old)s;
+
+    """
+    )
+    cr.execute(_query, locals())
 
 
 def force_install_module(cr, module, deps=None):
@@ -317,41 +479,53 @@ def force_install_module(cr, module, deps=None):
                           module of this list is already installed
                           (or about to be)
     """
-    subquery = ""
-    subparams = ()
+    subquery = sql.SQL("")
     if deps:
-        subquery = """AND EXISTS(SELECT 1 FROM ir_module_module
-                                  WHERE name IN %s
-                                    AND state IN %s)"""
-        subparams = (tuple(deps), _INSTALLED_MODULE_STATES)
+        subquery = sql.SQL(
+            """
+            AND EXISTS
+              (SELECT 1
+               FROM ir_module_module
+               WHERE name IN %(deps)s
+                 AND state IN %(states)s)
 
-    cr.execute(
         """
-        WITH RECURSIVE deps (mod_id, dep_name) AS (
-              SELECT m.id, d.name from ir_module_module_dependency d
-              JOIN ir_module_module m on (d.module_id = m.id)
-              WHERE m.name = %s
-            UNION
-              SELECT m.id, d.name from ir_module_module m
-              JOIN deps ON deps.dep_name = m.name
-              JOIN ir_module_module_dependency d on (d.module_id = m.id)
         )
-        UPDATE ir_module_module m
-           SET state = CASE WHEN state = 'to remove' THEN 'to upgrade'
-                            WHEN state = 'uninstalled' THEN 'to install'
-                            ELSE state
-                       END,
-               demo=(select demo from ir_module_module where name='base')
-          FROM deps d
-         WHERE m.id = d.mod_id
-           {}
-     RETURNING m.name, m.state
-    """.format(
-            subquery
-        ),
-        (module,) + subparams,
-    )
+        deps = tuple(deps)
+        states = _INSTALLED_MODULE_STATES
 
+    _params = {"subquery": subquery}
+    _query = sql.SQL(
+        """
+
+         WITH RECURSIVE deps (mod_id, dep_name) AS
+          (SELECT m.id,
+                  d.name
+           FROM ir_module_module_dependency d
+           JOIN ir_module_module m ON (d.module_id = m.id)
+           WHERE m.name = %(module)s
+           UNION SELECT m.id,
+                        d.name
+           FROM ir_module_module m
+           JOIN deps ON deps.dep_name = m.name
+           JOIN ir_module_module_dependency d ON (d.module_id = m.id))
+        UPDATE ir_module_module m
+        SET state = CASE
+                        WHEN state = 'to remove' THEN 'to upgrade'
+                        WHEN state = 'uninstalled' THEN 'to install'
+                        ELSE state
+                    END,
+                    demo=
+          (SELECT demo
+           FROM ir_module_module
+           WHERE name='base')
+        FROM deps d
+        WHERE m.id = d.mod_id {subquery} RETURNING m.name,
+                                         m.state;
+
+    """
+    ).format(**_params)
+    cr.execute(_query, locals())
     state = dict(cr.fetchall()).get(module)
     return state
 
@@ -359,25 +533,34 @@ def force_install_module(cr, module, deps=None):
 def new_module_dep(cr, module, new_dep):
     """Add a new dependency to a module."""
     # One new dep at a time
-    cr.execute(
-        """INSERT INTO ir_module_module_dependency(name, module_id)
-                       SELECT %s, id
-                         FROM ir_module_module m
-                        WHERE name=%s
-                          AND NOT EXISTS(SELECT 1
-                                           FROM ir_module_module_dependency
-                                          WHERE module_id = m.id
-                                            AND name=%s)
-                """,
-        (new_dep, module, new_dep),
-    )
+    _query = sql.SQL(
+        """
 
-    # Update new_dep state depending on module state
-    cr.execute(
-        """SELECT state from ir_module_module
-                  WHERE name = %s""",
-        [module],
+        INSERT INTO ir_module_module_dependency(name, module_id)
+        SELECT %(new_dep)s,
+               id
+        FROM ir_module_module m
+        WHERE name = %(module)s
+          AND NOT EXISTS
+            (SELECT 1
+             FROM ir_module_module_dependency
+             WHERE module_id = m.id
+               AND name = %(new_dep)s);
+
+    """
     )
+    cr.execute(_query, locals())
+    _query = sql.SQL(
+        """
+
+        SELECT state
+        FROM ir_module_module
+        WHERE name = %(module)s;
+
+    """
+    )
+    cr.execute(_query, locals())
+
     mod_state = (cr.fetchone() or ["n/a"])[0]
     if mod_state in _INSTALLED_MODULE_STATES:
         # Module was installed, need to install all its deps, recursively,
@@ -391,15 +574,20 @@ def remove_module_deps(cr, module, old_deps):
         :param tuple old_deps: list of dependencies to be removed
     """
     assert isinstance(old_deps, tuple)
-    cr.execute(
-        """DELETE FROM ir_module_module_dependency
-                        WHERE module_id = (SELECT id
-                                             FROM ir_module_module
-                                            WHERE name=%s)
-                          AND name IN %s
-               """,
-        (module, old_deps),
+    _query = sql.SQL(
+        """
+
+        DELETE
+        FROM ir_module_module_dependency
+        WHERE module_id =
+            (SELECT id
+             FROM ir_module_module
+             WHERE name = %(module)s)
+          AND name IN %(old_deps)s
+
+    """
     )
+    cr.execute(_query, locals())
 
 
 def module_deps_diff(cr, module, add=(), remove=()):
@@ -423,7 +611,16 @@ def new_module(cr, module, deps=(), auto_install=False):
         :param bool auto_install: whether the module will auto install if all
                                   its dependencies are installed
     """
-    cr.execute("SELECT count(1) FROM ir_module_module WHERE name = %s", [module])
+    _query = sql.SQL(
+        """
+
+        SELECT count(1)
+        FROM ir_module_module
+        WHERE name = %(module)s
+
+    """
+    )
+    cr.execute(_query, locals())
     if cr.fetchone()[0]:
         # Avoid duplicate entries for module which is already installed,
         # even before it has become standard module in new version
@@ -434,26 +631,33 @@ def new_module(cr, module, deps=(), auto_install=False):
         state = "to install" if modules_installed(cr, *deps) else "uninstalled"
     else:
         state = "uninstalled"
-    cr.execute(
-        """\
-        INSERT INTO ir_module_module (
-            name, state, demo
-        ) VALUES (
-            %s, %s, (select demo from ir_module_module where name='base'))
-        RETURNING id""",
-        (module, state),
+    _query = sql.SQL(
+        """
+
+        INSERT INTO ir_module_module (name, STATE, demo)
+        VALUES (%(module)s, %(state)s,
+                  (SELECT demo
+                   FROM ir_module_module
+                   WHERE name='base')) RETURNING id
+
+    """
     )
+    cr.execute(_query, locals())
     new_id, = cr.fetchone()
 
-    cr.execute(
-        """\
-        INSERT INTO ir_model_data (
-            name, module, noupdate, model, res_id
-        ) VALUES (
-            'module_'||%s, 'base', 't', 'ir.module.module', %s
-        )""",
-        (module, new_id),
+    _query = sql.SQL(
+        """
+
+        INSERT INTO ir_model_data (name, module, noupdate, model, res_id)
+        VALUES ('module_'||%(module)s,
+                                    'base',
+                                    't',
+                                    'ir.module.module',
+                                    %(new_id)s)
+
+    """
     )
+    cr.execute(_query, locals())
 
     for dep in deps:
         new_module_dep(cr, module, dep)
@@ -471,15 +675,18 @@ def force_migration_of_fresh_module(cr, module):
 
     # Force module state to be in `to upgrade`.
     # Needed for migration script execution. See http://git.io/vnF7f
-    cr.execute(
-        """UPDATE ir_module_module
-                     SET state='to upgrade',
-                         latest_version=%s
-                   WHERE name=%s
-                     AND state='to install'
-               RETURNING id""",
-        [version, module],
+    _query = sql.SQL(
+        """
+
+        UPDATE ir_module_module
+        SET state = 'to upgrade',
+                    latest_version = %(version)s
+        WHERE name = %(module)s
+          AND state = 'to install' RETURNING id
+
+    """
     )
+    cr.execute(_query, locals())
     if cr.rowcount:
         # Force module in `init` mode beside its state is forced to `to upgrade`
         # See http://git.io/vnF7O
@@ -509,20 +716,22 @@ def split_group(cr, from_groups, to_group):
 
     assert to_group
 
-    cr.execute(
+    _query = sql.SQL(
         """
+
         INSERT INTO res_groups_users_rel(uid, gid)
-             SELECT uid, %s
-               FROM res_groups_users_rel
-           GROUP BY uid
-             HAVING array_agg(gid) @> %s
-             EXCEPT
-             SELECT uid, gid
-               FROM res_groups_users_rel
-              WHERE gid = %s
-    """,
-        [to_group, from_groups, to_group],
+        SELECT uid,
+               %(to_group)s
+        FROM res_groups_users_rel
+        GROUP BY uid HAVING array_agg(gid) @> %(from_groups)s EXCEPT
+        SELECT uid,
+               gid
+        FROM res_groups_users_rel
+        WHERE gid = %(to_group)s
+
+    """
     )
+    cr.execute(_query, locals())
 
 
 # Models & Fields utilities
@@ -542,19 +751,29 @@ def create_m2m(cr, m2m, fk1, fk2, col1=None, col2=None):
     if col2 is None:
         col2 = "%s_id" % fk2
 
-    cr.execute(
+    _params = {
+        "m2m": sql.Identifier(m2m),
+        "col1": sql.Identifier(col1),
+        "fk1": sql.Identifier(fk1),
+        "col2": sql.Identifier(col2),
+        "fk2": sql.Identifier(fk2),
+    }
+    _query = sql.SQL(
         """
-        CREATE TABLE {m2m}(
-            {col1} integer NOT NULL REFERENCES {fk1}(id) ON DELETE CASCADE,
-            {col2} integer NOT NULL REFERENCES {fk2}(id) ON DELETE CASCADE,
-            UNIQUE ({col1}, {col2})
-        );
+
+        CREATE TABLE {m2m}({col1} integer NOT NULL REFERENCES {fk1}(id) ON
+                           DELETE CASCADE, {col2} integer NOT NULL REFERENCES {fk2}(id) ON
+                           DELETE CASCADE,
+                                  UNIQUE ({col1}, {col2}));
+
+
         CREATE INDEX ON {m2m}({col1});
+
+
         CREATE INDEX ON {m2m}({col2});
-    """.format(
-            **locals()
-        )
-    )
+    """
+    ).format(**_params)
+    cr.execute(_query)
 
 
 def ensure_m2o_func_field_data(cr, src_table, column, dst_table):
@@ -567,14 +786,21 @@ def ensure_m2o_func_field_data(cr, src_table, column, dst_table):
     """
     if not column_exists(cr, src_table, column):
         return
-    cr.execute(
-        """SELECT count(1)
-                    FROM "{src_table}"
-                   WHERE "{column}" NOT IN (SELECT id FROM "{dst_table}")
-               """.format(
-            src_table=src_table, column=column, dst_table=dst_table
-        )
-    )
+    _params = {
+        "src_table": sql.Identifier(src_table),
+        "column": sql.Identifier(column),
+        "dst_table": sql.Identifier(dst_table),
+    }
+    _query = sql.SQL(
+        """
+        SELECT count(1)
+        FROM {src_table}
+        WHERE {column} NOT IN
+            (SELECT id
+             FROM {dst_table})
+    """
+    ).format(**_params)
+    cr.execute(_query)
     if cr.fetchone()[0]:
         remove_column(cr, src_table, column, cascade=True)
 
@@ -588,52 +814,63 @@ def uniq_tags(cr, model, uniq_column="name", order="id"):
         you can prioritize tags in CamelCase/UPPERCASE.
     """
     table = table_of_model(cr, model)
-    upds = []
+    _upds = sql.SQL("")
     for ft, fc, _, da in get_fk(cr, table):
         assert da == "c"  # should be a ondelete=cascade fk
         cols = get_columns(cr, ft, ignore=(fc,))[0]
         assert len(cols) == 1  # it's a m2, should have only 2 columns
 
-        upds.append(
+        _params = {
+            "rel": sql.Indentifier(ft),
+            "c1": sql.Identifier(cols[0]),
+            "c2": sql.Identifier(cols[1]),
+        }
+
+        _upds += sql.SQL(
             """
+
             INSERT INTO {rel}({c1}, {c2})
-                 SELECT r.{c1}, d.id
-                   FROM {rel} r
-                   JOIN dups d ON (r.{c2} = ANY(d.others))
-                 EXCEPT
-                 SELECT r.{c1}, r.{c2}
-                   FROM {rel} r
-                   JOIN dups d ON (r.{c2} = d.id)
-        """.format(
-                rel=ft, c1=cols[0], c2=fc
-            )
-        )
+            SELECT r.{c1}, d.id
+            FROM {rel} r
+            JOIN dups d ON (r.{c2} = ANY(d.others)) EXCEPT
+            SELECT r.{c1}, r.{c2}
+            FROM {rel} r
+            JOIN dups d ON (r.{c2} = d.id)
 
-    assert upds  # if not m2m found, there is something wrong...
+        """
+        ).format(**_params)
 
-    updates = ",".join("_upd_%s AS (%s)" % x for x in enumerate(upds))
-    query = """
-        WITH dups AS (
-            SELECT (array_agg(id order by {order}))[1] as id,
-                   (array_agg(id order by {order}))[2:array_length(array_agg(id), 1)] as others
-              FROM {table}
-          GROUP BY {uniq_column}
-            HAVING count(id) > 1
-        ),
-        _upd_imd AS (
-            UPDATE ir_model_data x
-               SET res_id = d.id
-              FROM dups d
-             WHERE x.model = %s
-               AND x.res_id = ANY(d.others)
-        ),
-        {updates}
-        DELETE FROM {table} WHERE id IN (SELECT unnest(others) FROM dups)
-    """.format(
-        **locals()
-    )
+    assert _upds  # if not m2m found, there is something wrong...
 
-    cr.execute(query, [model])
+    # TODO: There is an issue here, find out teleologically, what was meant.
+    updates = sql.SQL(", ".join("_upd_%s AS (%s)" % x for x in enumerate(_upds)))
+    _params = {
+        "table": sql.Identifier(table),
+        "uniq_column": sql.Identifier(uniq_column),
+        "updates": updates,
+    }
+    _query = sql.SQL(
+        """
+
+         WITH dups AS
+          ( SELECT (array_agg(id ORDER BY {order}))[1] AS id,
+                   (array_agg(id ORDER BY {order}))[2:array_length(array_agg(id), 1)] AS others
+           FROM {table}
+           GROUP BY {uniq_column} HAVING count(id) > 1 ), _upd_imd AS
+          ( UPDATE ir_model_data x
+           SET res_id = d.id
+           FROM dups d
+           WHERE x.model = %(model)s
+             AND x.res_id = ANY(d.others) ), {updates}
+        DELETE
+        FROM {table}
+        WHERE id IN (
+          SELECT unnest(others)
+          FROM dups)
+
+    """
+    ).format(**_params)
+    cr.execute(_query, locals())
 
 
 def remove_field(cr, model, fieldname, cascade=False):
@@ -650,61 +887,89 @@ def remove_field(cr, model, fieldname, cascade=False):
         return remove_model(cr, model)
 
     # clean dashboards' `group_by`
-    cr.execute(
+    _query = sql.SQL(
         """
-        SELECT      array_agg(f.name), array_agg(aw.id)
-        FROM        ir_model_fields f
-            JOIN    ir_act_window aw
-            ON      aw.res_model = f.model
-        WHERE       f.model = %s AND f.name = %s
-        GROUP BY    f.model
-        """,
-        [model, fieldname],
+
+        SELECT array_agg(f.name),
+               array_agg(aw.id)
+        FROM ir_model_fields f
+        JOIN ir_act_window aw ON aw.res_model = f.model
+        WHERE f.model = %s
+          AND f.name = %s
+        GROUP BY f.model
+
+    """
     )
+    cr.execute(_query, locals())
     for fields, actions in cr.fetchall():
-        cr.execute(
-            """\
-            SELECT  id, arch
-            FROM    ir_ui_view_custom
-            WHERE   arch ~ %s
-            """,
-            ["name=[\"'](%s)[\"']" % "|".join(map(str, actions))],
+        _query = sql.SQL(
+            """
+
+            SELECT id,
+                   arch
+            FROM ir_ui_view_custom
+            WHERE arch ~ %s
+
+        """
         )
+        cr.execute(_query, ["name=[\"'](%s)[\"']" % "|".join(map(str, actions))])
         for id, arch in ((x, lxml.etree.fromstring(y)) for x, y in cr.fetchall()):
             for action in arch.iterfind(".//action"):
                 context = eval(action.get("context", "{}"), UnquoteEvalContext())
                 if context.get("group_by"):
                     context["group_by"] = list(set(context["group_by"]) - set(fields))
                     action.set("context", str(context))
-            cr.execute(
-                """\
-                UPDATE  ir_ui_view_custom
-                SET     arch = %s
-                WHERE   id = %s
-                """,
-                [lxml.etree.tostring(arch, encoding="unicode"), id],
-            )
+            _query = sql.SQL(
+                """
 
-    cr.execute(
-        "DELETE FROM ir_model_fields WHERE model=%s AND name=%s RETURNING id",
-        (model, fieldname),
+                UPDATE ir_ui_view_custom
+                SET arch = %s
+                WHERE id = %s
+
+            """
+            )
+            cr.execute(_query, [lxml.etree.tostring(arch, encoding="unicode"), id])
+
+    _query = sql.SQL(
+        """
+
+        DELETE
+        FROM ir_model_fields
+        WHERE model=%(model)s
+          AND name=%(fieldname)s RETURNING id
+
+    """
     )
+    cr.execute(_query, locals())
     fids = tuple(vals[0] for vals in cr.fetchall())
     if fids:
-        cr.execute(
-            "DELETE FROM ir_model_data WHERE model=%s AND res_id IN %s",
-            ("ir.model.fields", fids),
+        _query = sql.SQL(
+            """
+
+            DELETE
+            FROM ir_model_data
+            WHERE model = 'ir.model.fields'
+              AND res_id IN %(fids)s
+
+        """
         )
+        cr.execute(_query, **locals())
 
     # cleanup translations
-    cr.execute(
+    _query = sql.SQL(
         """
-       DELETE FROM ir_translation
-        WHERE name=%s
-          AND type in ('field', 'help', 'model', 'selection')   -- ignore wizard_* translations
-    """,
-        ["{},{}".format(model, fieldname)],
+
+        DELETE
+        FROM ir_translation
+        WHERE name = %s
+          AND TYPE IN ('field',
+                       'help',
+                       'model',
+                       'selection') -- ignore wizard_* translations
+
+    """
     )
+    cr.execute(_query, ["{},{}".format(model, fieldname)])
 
     table = table_of_model(cr, model)
     remove_column(cr, table, fieldname, cascade=cascade)
@@ -713,15 +978,19 @@ def remove_field(cr, model, fieldname, cascade=False):
 def move_field_to_module(cr, model, fieldname, old_module, new_module):
     """Move a field to another module."""
     name = IMD_FIELD_PATTERN % (model.replace(".", "_"), fieldname)
-    cr.execute(
-        """UPDATE ir_model_data
-                     SET module=%s
-                   WHERE model=%s
-                     AND name=%s
-                     AND module=%s
-               """,
-        (new_module, "ir.model.fields", name, old_module),
+
+    _query = sql.SQL(
+        """
+
+        UPDATE ir_model_data
+        SET module=%(new_module)s
+        WHERE model='ir.model.fields'
+          AND name=%(name)s
+          AND module=%(old_module)s
+
+    """
     )
+    cr.execute(_query, locals())
 
 
 def rename_field(cr, model, old, new, update_references=True):
@@ -731,35 +1000,69 @@ def rename_field(cr, model, old, new, update_references=True):
                                        filters, saved exports, etc. will be
                                        adapted (default: True)
     """
-    cr.execute(
-        "UPDATE ir_model_fields SET name=%s WHERE model=%s AND name=%s RETURNING id",
-        (new, model, old),
+
+    _query = sql.SQL(
+        """
+
+        UPDATE ir_model_fields
+        SET name = %(new)s
+        WHERE model = %(model)s
+          AND name = %(old)s RETURNING id
+
+    """
     )
+    cr.execute(_query, locals())
     [fid] = cr.fetchone() or [None]
     if fid:
         name = IMD_FIELD_PATTERN % (model.replace(".", "_"), new)
-        cr.execute(
-            "UPDATE ir_model_data SET name=%s WHERE model=%s AND res_id=%s",
-            (name, "ir.model.fields", fid),
-        )
-        cr.execute("UPDATE ir_property SET name=%s WHERE fields_id=%s", [new, fid])
 
-    cr.execute(
+        _query = sql.SQL(
+            """
+
+            UPDATE ir_model_data
+            SET name=%(name)s
+            WHERE model='ir.model.fields'
+              AND res_id=%(fid)s;
+
+
+            UPDATE ir_property
+            SET name=%(new)s
+            WHERE fields_id=%(fid)s;
+
         """
-       UPDATE ir_translation
-          SET name=%s
-        WHERE name=%s
-          AND type in ('field', 'help', 'model', 'selection')   -- ignore wizard_* translations
-    """,
-        ["{},{}".format(model, new), "{},{}".format(model, old)],
-    )
+        )
+        cr.execute(_query, locals())
+    _query = sql.SQL(
+        """
 
+
+        UPDATE ir_translation
+        SET name = %s
+        WHERE name = %s
+          AND TYPE IN ('field',
+                       'help',
+                       'model',
+                       'selection') -- ignore wizard_* translations
+
+    """
+    )
+    cr.execute(_query, ["{},{}".format(model, new), "{},{}".format(model, old)])
     table = table_of_model(cr, model)
     # NOTE table_exists is needed to avoid altering views
     if table_exists(cr, table) and column_exists(cr, table, old):
-        cr.execute(
-            'ALTER TABLE "{}" RENAME COLUMN "{}" TO "{}"'.format(table, old, new)
-        )
+        _params = {
+            "table": sql.Identifier(table),
+            "old": sql.Identifier(old),
+            "new": sql.Identifier(new),
+        }
+        _query = sql.SQL(
+            """
+
+            ALTER TABLE {table} RENAME COLUMN {old} TO {new}
+
+        """
+        ).format(**_params)
+        cr.execute(_query)
 
     if update_references:
         update_field_references(cr, old, new, only_models=(model,))
@@ -798,24 +1101,62 @@ def make_field_company_dependent(
     assert field_type in type2field
     value_field = type2field[field_type]
 
-    cr.execute(
-        "SELECT id FROM ir_model_fields WHERE model=%s AND name=%s", (model, field)
+    _query = sql.SQL(
+        """
+
+        SELECT id
+        FROM ir_model_fields
+        WHERE model = %(model)s
+          AND name = %(field)s
+
+    """
     )
+    cr.execute(_query, locals())
     [fields_id] = cr.fetchone()
 
     table = table_of_model(cr, model)
 
+    _params = {
+        "field": sql.Identifier(field),
+        "value_field": sql.Identifier(value_field),
+        "company_field": sql.Identifier(company_field),
+        "table": sql.Identifier(table),
+        "target_model_prefix": sql.Literal("{},".format(target_model)),
+        "model_prefix": sql.Literal("{},".format(model)),
+    }
+
     if default_value is None:
-        where_clause = "{field} IS NOT NULL".format(field=field)
+        where_clause = sql.SQL(
+            """
+
+            {field} IS NOT NULL
+
+        """
+        ).format(**_params)
     else:
-        where_clause = "{field} != %(default_value)s".format(field=field)
+        where_clause = sql.SQL(
+            """
+
+            {field} != %(default_value)s
+
+        """
+        ).format(**_params)
 
     if field_type != "many2one":
-        value_select = field
+        value_select = sql.Identifier(field)
     else:
         # for m2o, the store value is a reference field, so in format `model,id`
-        value_select = "CONCAT('{target_model},', {field})".format(**locals())
+        value_select = sql.SQL(
+            """
 
+        CONCAT({target_model_prefix}, {field})
+
+        """
+        ).format(**_params)
+
+    _params = dict(
+        {"value_select": value_select, "where_clause": where_clause}, **_params
+    )
     # TODO: remove me when anonimization module is removed
     if is_field_anonymized(cr, model, field):
         # if field is anonymized, we need to create a property for each record
@@ -825,7 +1166,13 @@ def make_field_company_dependent(
         if field_type != "many2one":
             ano_value_select = "%(value)s"
         else:
-            ano_value_select = "CONCAT('{},', %(value)s)".format(target_model)
+            ano_value_select = sql.SQL(
+                """
+
+            CONCAT({target_model_prefix}, %(value)s)
+
+            """
+            ).format(**_params)
 
         register_unanonymization_query(
             cr,
@@ -835,7 +1182,7 @@ def make_field_company_dependent(
             UPDATE ir_property
                SET {value_field} = CASE WHEN %(value)s IS NULL THEN {ano_default_value}
                                         ELSE {ano_value_select} END
-             WHERE res_id = CONCAT('{model},', %(id)s)
+             WHERE res_id = CONCAT({model_prefix}, %(id)s)
                AND name='{field}'
                AND type='{field_type}'
                AND fields_id={fields_id}
@@ -844,48 +1191,64 @@ def make_field_company_dependent(
             ),
         )
 
-    cr.execute(
+    _query = sql.SQL(
         """
-        WITH cte AS (
-            SELECT CONCAT('{model},', id) as res_id, {value_select} as value,
-                   ({company_field})::integer as company
-              FROM {table} t
-             WHERE {where_clause}
-        )
+
+         WITH cte AS
+          ( SELECT CONCAT({model_prefix}, id) AS res_id,
+                   {value_select} AS value,
+                   ({company_field})::integer AS company
+           FROM {table} t
+           WHERE {where_clause} )
         INSERT INTO ir_property(name, type, fields_id, company_id, res_id, {value_field})
-            SELECT %(field)s, %(field_type)s, %(fields_id)s, cte.company, cte.res_id, cte.value
-              FROM cte
-             WHERE NOT EXISTS(SELECT 1
-                                FROM ir_property
-                               WHERE fields_id=%(fields_id)s
-                                 AND COALESCE(company_id, 0) = COALESCE(cte.company, 0)
-                                 AND res_id=cte.res_id)
-    """.format(
-            **locals()
-        ),
-        locals(),
-    )
+        SELECT %(field)s,
+               %(field_type)s,
+               %(fields_id)s,
+               cte.company,
+               cte.res_id,
+               cte.value
+        FROM cte
+        WHERE NOT EXISTS
+            (SELECT 1
+             FROM ir_property
+             WHERE fields_id = %(fields_id)s
+               AND COALESCE(company_id, 0) = COALESCE(cte.company, 0)
+               AND res_id=cte.res_id)
+
+    """
+    ).format(**_params)
+    cr.execute(_query, locals())
     # default property
     if default_value:
-        cr.execute(
-            """INSERT INTO ir_property(name, type, fields_id, {value_field})
-                           VALUES (%s, %s, %s, %s)
-                        RETURNING id
-                   """.format(
-                value_field=value_field
-            ),
-            (field, field_type, fields_id, default_value),
+        _query = sql.SQL(
+            """
+
+            INSERT INTO ir_property(name, type, fields_id, {value_field})
+            VALUES (%(field)s,
+                    %(field_type)s,
+                    %(fields_id)s,
+                    %(default_value)s) RETURNING id
+
+        """
         )
+        cr.execute(_query, locals())
         [prop_id] = cr.fetchone()
         if default_value_ref:
             module, _, xid = default_value_ref.partition(".")
-            cr.execute(
-                """INSERT INTO ir_model_data
-                                      (module, name, model, res_id, noupdate)
-                               VALUES (%s, %s, %s, %s, %s)
-                       """,
-                (module, xid, "ir.property", prop_id, True),
+
+            _query = sql.SQL(
+                """
+
+                INSERT INTO ir_model_data (module, name, model, res_id, noupdate)
+                VALUES (%(module)s,
+                        %(xid)s,
+                        'ir.property',
+                        %(prop_id)s,
+                        TRUE)
+
+            """
             )
+            cr.execute(_query, locals())
 
     remove_column(cr, table, field, cascade=True)
 
@@ -894,15 +1257,18 @@ def is_field_anonymized(cr, model, field):
     """Check if a field has been anonymized prior to the migration."""
     if not module_installed(cr, "anonymization"):
         return False
-    cr.execute(
-        """SELECT id
-                    FROM ir_model_fields_anonymization
-                   WHERE model_name = %s
-                     AND field_name = %s
-                     AND state = 'anonymized'
-               """,
-        [model, field],
+    _query = sql.SQL(
+        """
+
+        SELECT id
+        FROM ir_model_fields_anonymization
+        WHERE model_name = %(model)s
+          AND field_name = %(field)s
+          AND STATE = 'anonymized'
+
+    """
     )
+    cr.execute(_query, locals())
     return bool(cr.rowcount)
 
 
@@ -926,87 +1292,121 @@ def update_field_references(cr, old, new, only_models=None):
         "models": tuple(only_models) if only_models else (),
     }
 
-    q = """
+    _query = sql.SQL(
+        """
+
         UPDATE ir_filters
-           SET domain = regexp_replace(domain, %(old)s, %(new)s, 'g'),
-               context = regexp_replace(regexp_replace(context,
-                                                       %(old)s, %(new)s, 'g'),
-                                                       %(def_old)s, %(def_new)s, 'g')
+        SET domain = regexp_replace(domain, %(old)s, %(new)s, 'g'),
+            context = regexp_replace(regexp_replace(context, %(old)s, %(new)s, 'g'), %(def_old)s, %(def_new)s, 'g')
+
     """
+    )
     if column_exists(cr, "ir_filters", "sort"):
-        q += ", sort = regexp_replace(sort, %(old)s, %(new)s, 'g')"
+        _query += sql.SQL(", sort = regexp_replace(sort, %(old)s, %(new)s, 'g')")
 
     if only_models:
-        q += " WHERE model_id IN %(models)s"
+        _query += sql.SQL(" WHERE model_id IN %(models)s")
 
-    cr.execute(q, p)
+    cr.execute(_query, p)
 
     # ir.exports.line
-    q = """
+    _query = sql.SQL(
+        """
+
         UPDATE ir_exports_line l
-           SET name = regexp_replace(l.name, %(old)s, %(new)s, 'g')
+        SET name = regexp_replace(l.name, %(old)s, %(new)s, 'g')
+
     """
+    )
     if only_models:
-        q += """
-          FROM ir_exports e
-         WHERE e.id = l.export_id
-           AND e.resource IN %(models)s
-    """
-    cr.execute(q, p)
+        _query += sql.SQL(
+            """
+
+            FROM ir_exports e
+            WHERE e.id = l.export_id
+              AND e.resource IN %(models)s
+
+        """
+        )
+    cr.execute(_query, p)
 
     # ir.action.server
     col_prefix = ""
     if not column_exists(cr, "ir_act_server", "condition"):
         col_prefix = "--"  # sql comment the line
-    q = """
+    _query = sql.SQL(
+        """
+
         UPDATE ir_act_server s
-           SET {col_prefix} condition = regexp_replace(condition, %(old)s, %(new)s, 'g'),
-               code = regexp_replace(code, %(old)s, %(new)s, 'g')
+        SET {col_prefix} condition = regexp_replace(condition, %(old)s, %(new)s, 'g'),
+            code = regexp_replace(code, %(old)s, %(new)s, 'g')
+
     """.format(
-        col_prefix=col_prefix
+            col_prefix=col_prefix
+        )
     )
     if only_models:
-        q += """
-          FROM ir_model m
-         WHERE m.id = s.model_id
-           AND m.model IN %(models)s
-           AND
-        """
-    else:
-        q += " WHERE "
+        _query += sql.SQL(
+            """
 
-    q += "s.state = 'code'"
-    cr.execute(q, p)
+            FROM ir_model m
+            WHERE m.id = s.model_id
+              AND m.model IN %(models)s
+              AND
+
+        """
+        )
+    else:
+        _query += sql.SQL(" WHERE ")
+
+    _query += sql.SQL("s.state = 'code'")
+    cr.execute(_query, p)
 
     # ir.rule
-    q = """
-        UPDATE ir_rule r
-           SET domain_force = regexp_replace(domain_force, %(old)s, %(new)s, 'g')
-    """
-    if only_models:
-        q += """
-          FROM ir_model m
-         WHERE m.id = r.model_id
-           AND m.model IN %(models)s
+    _query = sql.SQL(
         """
-    cr.execute(q, p)
+
+        UPDATE ir_rule r
+        SET domain_force = regexp_replace(domain_force, %(old)s, %(new)s, 'g')
+
+    """
+    )
+    if only_models:
+        _query += sql.SQL(
+            """
+
+            FROM ir_model m
+            WHERE m.id = r.model_id
+              AND m.model IN %(models)s
+
+        """
+        )
+    cr.execute(_query, p)
 
     # mass mailing
     if column_exists(cr, "mail_mass_mailing", "mailing_domain"):
-        q = """
+        _query = sql.SQL(
+            """
+
             UPDATE mail_mass_mailing u
-               SET mailing_domain = regexp_replace(u.mailing_domain, %(old)s, %(new)s, 'g')
+            SET mailing_domain = regexp_replace(u.mailing_domain, %(old)s, %(new)s, 'g')
+
         """
+        )
         if only_models:
             if column_exists(cr, "mail_mass_mailing", "mailing_model_id"):
-                q += """
-                  FROM ir_model m
-                 WHERE m.id = u.mailing_model_id
-                   AND m.model IN %(models)s
+                _query += sql.SQL(
+                    """
+
+                    FROM ir_model m
+                    WHERE m.id = u.mailing_model_id
+                      AND m.model IN %(models)s
+
                 """
+                )
             else:
-                q += "WHERE u.mailing_model IN %(models)s"
-        cr.execute(q, p)
+                _query += sql.SQL("WHERE u.mailing_model IN %(models)s")
+        cr.execute(_query, p)
 
 
 def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256):
@@ -1020,7 +1420,15 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
         :param integer chunk_size: batch size for recomputing (default: 256)
     """
     if ids is None:
-        cr.execute('SELECT id FROM "%s"' % table_of_model(cr, model))
+
+        _query = sql.SQL(
+            """
+
+            SELECT id FROM "%(table)s"
+
+        """
+        )
+        cr.execute(_query, dict(table=table_of_model(cr, model)))
         ids = tuple(map(itemgetter(0), cr.fetchall()))
 
     Model = env(cr)[model]
@@ -1046,25 +1454,28 @@ def fix_wrong_m2o(cr, table, column, target, value=None):
                       that will be parsed by psycopg2 (variable type)
                       (default: None - NULL)
     """
-    cr.execute(
+    _params = {
+        "table": sql.Identifier(table),
+        "target": sql.Identifier(target),
+        "column": sql.Identifier(column),
+    }
+    _query = sql.SQL(
         """
-        WITH wrongs_m2o AS (
-            SELECT s.id
-              FROM {table} s
-         LEFT JOIN {target} t
-                ON s.{column} = t.id
-             WHERE s.{column} IS NOT NULL
-               AND t.id IS NULL
-        )
+
+         WITH wrongs_m2o AS
+          ( SELECT s.id
+           FROM {table} s
+           LEFT JOIN {target} t ON s.{column} = t.id
+           WHERE s.{column} IS NOT NULL
+             AND t.id IS NULL )
         UPDATE {table} s
-           SET {column}=%s
-          FROM wrongs_m2o w
-         WHERE s.id = w.id
-    """.format(
-            table=table, column=column, target=target
-        ),
-        [value],
-    )
+        SET {column} = %(value)s
+        FROM wrongs_m2o w
+        WHERE s.id = w.id
+
+    """
+    ).format(**_params)
+    cr.execute(_query, locals())
 
 
 def remove_model(cr, model, drop_table=True):
@@ -1075,60 +1486,135 @@ def remove_model(cr, model, drop_table=True):
     for ir in indirect_references(cr):
         if ir.table == "ir_model":
             continue
-        query = 'DELETE FROM "{}" WHERE {} RETURNING id'.format(
-            ir.table, ir.model_filter()
-        )
-        cr.execute(query, [model])
+        _params = {
+            "table": sql.Identifier(ir.table),
+            "where_clause": sql.SQL(ir.model_filter(placeholder="%(model)s")),
+        }
+        _query = sql.SQL(
+            """
+
+            DELETE
+            FROM {table}
+            WHERE {where_clause} RETURNING id
+
+        """
+        ).format(**_params)
+        cr.execute(_query, locals())
         ids = tuple(vals[0] for vals in cr.fetchall())
         remove_refs(cr, model_of_table(cr, ir.table), ids)
 
     remove_refs(cr, model)
 
-    cr.execute("SELECT id FROM ir_model WHERE model=%s", (model,))
+    _query = sql.SQL(
+        """
+
+        SELECT id
+        FROM ir_model
+        WHERE model = %(model)s
+
+    """
+    )
+    cr.execute(_query, locals())
     [mod_id] = cr.fetchone() or [None]
     if mod_id:
         # some required fk are "ON DELETE SET NULL".
         for tbl in "base_action_rule google_drive_config".split():
             if column_exists(cr, tbl, "model_id"):
-                cr.execute("DELETE FROM {} WHERE model_id=%s".format(tbl), [mod_id])
-        cr.execute("DELETE FROM ir_model_constraint WHERE model=%s", (mod_id,))
-        cr.execute("DELETE FROM ir_model_relation WHERE model=%s", (mod_id,))
+                _params = {"tbl": sql.Identifier(tbl)}
+                _query = sql.SQL(
+                    """
 
-        # Drop XML IDs of ir.rule and ir.model.access records that will be cascade-dropped,
-        # when the ir.model record is dropped - just in case they need to be re-created
-        cr.execute(
-            """DELETE FROM ir_model_data x
-                            USING ir_rule a
-                            WHERE x.res_id = a.id AND x.model='ir.rule' AND
-                                  a.model_id = %s; """,
-            (mod_id,),
+                    DELETE
+                    FROM {tbl}
+                    WHERE model_id = %(mod_id)s
+
+                """
+                ).format(**_params)
+                cr.execute(_query, locals())
+
+        _query = sql.SQL(
+            """
+
+
+            DELETE
+            FROM ir_model_constraint
+            WHERE model=%(mod_id)s;
+
+
+            DELETE
+            FROM ir_model_relation
+            WHERE model=%(mod_id)s;
+
+             --- Drop XML IDs of ir.rule and ir.model.access records that will be cascade-dropped,
+             --- when the ir.model record is dropped - just in case they need to be re-created
+
+            DELETE
+            FROM ir_model_data x USING ir_rule a
+            WHERE x.res_id = a.id
+              AND x.model='ir.rule'
+              AND a.model_id = %(mod_id)s;
+
+
+            DELETE
+            FROM ir_model_data x USING ir_model_access a
+            WHERE x.res_id = a.id
+              AND x.model='ir.model.access'
+              AND a.model_id = %(mod_id)s;
+
+
+            DELETE
+            FROM ir_model
+            WHERE id=%(mod_id)s;
+
+        """
         )
-        cr.execute(
-            """DELETE FROM ir_model_data x
-                            USING ir_model_access a
-                            WHERE x.res_id = a.id AND x.model='ir.model.access' AND
-                                  a.model_id = %s; """,
-            (mod_id,),
-        )
+        cr.execute(_query, locals())
 
-        cr.execute("DELETE FROM ir_model WHERE id=%s", (mod_id,))
+    _query = sql.SQL(
+        """
 
-    cr.execute(
-        "DELETE FROM ir_model_data WHERE model=%s AND name=%s",
-        ("ir.model", "model_%s" % model_underscore),
+        DELETE
+        FROM ir_model_data
+        WHERE model='ir.model'
+          AND name = %(name)s;
+
+        DELETE
+        FROM ir_model_data
+        WHERE model='ir.model.fields'
+          AND name LIKE %(name_like)s;
+
+    """
     )
     cr.execute(
-        "DELETE FROM ir_model_data WHERE model='ir.model.fields' AND name LIKE %s",
-        [(IMD_FIELD_PATTERN % (model_underscore, "%")).replace("_", r"\_")],
+        _query,
+        dict(
+            name="model_{}".format(model_underscore),
+            name_like=(IMD_FIELD_PATTERN % (model_underscore, "%")).replace("_", r"\_"),
+        ),
     )
 
     table = table_of_model(cr, model)
+    _params = {"table": sql.Identifier(table)}
     if drop_table:
         if table_exists(cr, table):
-            cr.execute('DROP TABLE "{}" CASCADE'.format(table))
+            _query = sql.SQL(
+                """
+
+                DROP TABLE {table} CASCADE
+
+            """
+            ).format(**_params)
+            cr.execute(_query)
         elif view_exists(cr, table):
             # For auto=False models...
-            cr.execute('DROP VIEW "{}" CASCADE'.format(table))
+            _query = sql.SQL(
+                """
+
+                DROP VIEW {table} CASCADE
+
+            """
+            ).format(**_params)
+            cr.execute(_query)
 
 
 def remove_refs(cr, model, ids=None):
@@ -1137,58 +1623,96 @@ def remove_refs(cr, model, ids=None):
     e.g. reference fields, translations, ...
     """
     if ids is None:
-        match = "like %s"
+        match = sql.SQL("like %(needle)s")
         needle = model + ",%"
     else:
         if not ids:
             return
-        match = "in %s"
+        match = sql.SQL("in %(needle)s")
         needle = tuple("{},{}".format(model, i) for i in ids)
 
     # "model-comma" fields
-    cr.execute(
+    _query = sql.SQL(
         """
-        SELECT model, name
-          FROM ir_model_fields
-         WHERE ttype='reference'
-         UNION
-        SELECT 'ir.translation', 'name'
+
+        SELECT model,
+               name
+        FROM ir_model_fields
+        WHERE ttype = 'reference'
+        UNION
+        SELECT 'ir.translation',
+               'name'
+
     """
     )
+    cr.execute(_query)
 
     for ref_model, ref_column in cr.fetchall():
         table = table_of_model(cr, ref_model)
         # NOTE table_exists is needed to avoid deleting from views
         if table_exists(cr, table) and column_exists(cr, table, ref_column):
-            query_tail = ' FROM "{}" WHERE "{}" {}'.format(table, ref_column, match)
+            _params = {
+                "table": sql.Identifier(table),
+                "ref_column": sql.Identifier(ref_column),
+                "match": match,
+            }
+            query_tail = sql.SQL(
+                """
+
+                FROM {table}
+                WHERE {ref_column} {match}
+
+            """
+            ).format(**_params)
             if ref_model == "ir.ui.view":
-                cr.execute("SELECT id" + query_tail, [needle])
+                _query = sql.SQL("""SELECT id """) + query_tail
+                cr.execute(_query, locals())
                 for (view_id,) in cr.fetchall():
                     remove_view(
                         cr, view_id=view_id, deactivate_custom=True, silent=True
                     )
             elif ref_model == "ir.ui.menu":
-                cr.execute("SELECT id" + query_tail, [needle])
+                _query = sql.SQL("""SELECT id """) + query_tail
+                cr.execute(_query, locals())
                 menu_ids = tuple(m[0] for m in cr.fetchall())
                 remove_menus(cr, menu_ids)
             else:
-                cr.execute("DELETE" + query_tail, [needle])
+                _query = sql.SQL("""DELETE """) + query_tail
+                cr.execute(_query, locals())
                 # TODO make it recursive?
 
     if table_exists(cr, "ir_values"):
         column, _ = _ir_values_value(cr)
-        query = "DELETE FROM ir_values WHERE {} {}".format(column, match)
-        cr.execute(query, [needle])
+        _params = {"column": sql.SQL(column), "match": match}
+
+        _query = sql.SQL(
+            """
+
+            DELETE
+            FROM ir_values
+            WHERE {column} {match}
+
+        """
+        ).format(**_params)
+        cr.execute(_query, locals())
 
     if ids is None:
-        cr.execute(
+        _query = sql.SQL(
             """
-            DELETE FROM ir_translation
-             WHERE name=%s
-               AND type IN ('constraint', 'sql_constraint', 'view', 'report', 'rml', 'xsl')
-        """,
-            [model],
+
+            DELETE
+            FROM ir_translation
+            WHERE name = %(model)s
+              AND TYPE IN ('constraint',
+                           'sql_constraint',
+                           'view',
+                           'report',
+                           'rml',
+                           'xsl')
+
+        """
         )
+        cr.execute(_query, locals())
 
 
 def move_model(cr, model, from_module, to_module, move_data=False, delete=False):
@@ -1204,35 +1728,41 @@ def move_model(cr, model, from_module, to_module, move_data=False, delete=False)
         remove_model(cr, model)
         return
 
-    model_u = model.replace(".", "_")
-    cr.execute(
-        "UPDATE ir_model_data SET module=%s WHERE module=%s AND model=%s AND name=%s",
-        (to_module, from_module, "ir.model", "model_%s" % model_u),
-    )
+    model_underscore = model.replace(".", "_")
+    name = "model_%s" % model_underscore
+    name_like = (IMD_FIELD_PATTERN % (model_underscore, "%")).replace("_", r"\_")
+    _query = sql.SQL(
+        """
 
-    cr.execute(
-        """UPDATE ir_model_data
-                     SET module=%s
-                   WHERE module=%s
-                     AND model='ir.model.fields'
-                     AND name LIKE %s
-               """,
-        [
-            to_module,
-            from_module,
-            (IMD_FIELD_PATTERN % (model_u, "%")).replace("_", r"\_"),
-        ],
+        UPDATE ir_model_data
+        SET module = %(to_module)s
+        WHERE module = %(from_module)s
+          AND model = 'ir.model'
+          AND name = %(name)s;
+
+
+        UPDATE ir_model_data
+        SET module = %(to_module)s
+        WHERE module = %(from_module)s
+          AND model='ir.model.fields'
+          AND name LIKE %(name)s;
+
+    """
     )
+    cr.execute(_query, locals())
 
     if move_data:
-        cr.execute(
-            """UPDATE ir_model_data
-                         SET module=%s
-                       WHERE module=%s
-                         AND model=%s
-                   """,
-            (to_module, from_module, model),
+        _query = sql.SQL(
+            """
+
+            UPDATE ir_model_data
+            SET module = %(to_module)s
+            WHERE module = %(from_module)s
+              AND model = %(model)s
+
+        """
         )
+        cr.execute(_query, locals())
 
 
 def rename_model(cr, old, new, rename_table=True):
@@ -1244,127 +1774,215 @@ def rename_model(cr, old, new, rename_table=True):
     if rename_table:
         old_table = table_of_model(cr, old)
         new_table = table_of_model(cr, new)
-        cr.execute('ALTER TABLE "{}" RENAME TO "{}"'.format(old_table, new_table))
-        cr.execute(
-            'ALTER SEQUENCE "{}_id_seq" RENAME TO "{}_id_seq"'.format(
-                old_table, new_table
-            )
-        )
-        # find & rename primary key, may still use an old name from a former migration
-        cr.execute(
+        _params = {
+            "old_table": sql.Identifier(old_table),
+            "new_table": sql.Identifier(new_table),
+            "old_table_seq_id": sql.Identifier("{}_id_seq".format(old_table)),
+            "new_table_sqe_id": sql.Identifier("{}_id_seq".format(new_table)),
+        }
+        _query = sql.SQL(
             """
-            SELECT  conname
-            FROM    pg_index, pg_constraint
-            WHERE   indrelid = %s::regclass
-            AND     indisprimary
-            AND     conrelid = indrelid
-            AND     conindid = indexrelid
-            AND     confrelid = 0;
-            """,
-            [new_table],
+
+            ALTER TABLE {old_table} RENAME TO {new_table};
+
+
+            ALTER SEQUENCE {old_table_seq_id} RENAME TO {new_table_sqe_id};
+
+        """
+        ).format(**_params)
+        cr.execute(_query, locals())
+
+        # find & rename primary key, may still use an old name from a former migration
+        _query = sql.SQL(
+            """
+
+            SELECT conname
+            FROM pg_index,
+                 pg_constraint
+            WHERE indrelid = %(new_table)s::regclass
+              AND indisprimary
+              AND conrelid = indrelid
+              AND conindid = indexrelid
+              AND confrelid = 0;
+
+        """
         )
+        cr.execute(_query, locals())
+
         primary_key, = cr.fetchone()
-        cr.execute(
-            'ALTER INDEX "{}" RENAME TO "{}_pkey"'.format(primary_key, new_table)
+
+        _params = dict(
+            {
+                "primary_key": sql.Identifier(primary_key),
+                "new_table_pkey": sql.Identifier("{}_pkey".format(new_table)),
+            },
+            **_params
         )
+        _query = sql.SQL(
+            """
+
+            ALTER INDEX {primary_key} RENAME TO {new_table_pkey}
+
+        """
+        ).format(**_params)
+        cr.execute(_query, locals())
 
         # DELETE all constraints and indexes (ignore the PK), ORM will recreate them.
-        cr.execute(
-            """SELECT constraint_name
-                        FROM information_schema.table_constraints
-                       WHERE table_name=%s
-                         AND constraint_type!=%s
-                         AND constraint_name !~ '^[0-9_]+_not_null$'
-                   """,
-            (new_table, "PRIMARY KEY"),
+        _query = sql.SQL(
+            """
+
+            SELECT CONSTRAINT_NAME
+            FROM information_schema.table_constraints
+            WHERE TABLE_NAME = %(new_table)s
+              AND constraint_type != 'PRIMARY KEY'
+              AND constraint_name !~ '^[0-9_]+_not_null$'
+
+        """
         )
-        for (const,) in cr.fetchall():
-            cr.execute("DELETE FROM ir_model_constraint WHERE name=%s", (const,))
-            cr.execute('ALTER TABLE "{}" DROP CONSTRAINT "{}"'.format(new_table, const))
+        cr.execute(_query, locals())
+        for (constrain,) in cr.fetchall():
+            _params = {
+                "constrain": sql.Identifier(constrain),
+                "new_table": sql.Identifier(new_table),
+            }
+            _query = sql.SQL(
+                """
+
+                DELETE
+                FROM ir_model_constraint
+                WHERE name = %(constrain)s;
+
+
+                ALTER TABLE {new_table}
+                DROP CONSTRAINT {constrain};
+
+            """
+            ).format(**_params)
+            cr.execute(_query, locals())
 
     updates = [r[:2] for r in res_model_res_id(cr)]
 
     for model, column in updates:
         table = table_of_model(cr, model)
-        query = "UPDATE {t} SET {c}=%s WHERE {c}=%s".format(t=table, c=column)
-        cr.execute(query, (new, old))
+        _params = {"table": sql.Identifier(table), "column": sql.Identifier(column)}
+        _query = sql.SQL(
+            """
+
+            UPDATE {table}
+            SET {column} = %(new)s
+            WHERE {column} = %(old)s
+
+        """
+        ).format(**_params)
+        cr.execute(_query, locals())
 
     # "model-comma" fields
-    cr.execute(
+    _query = sql.SQL(
         """
-        SELECT model, name
-          FROM ir_model_fields
-         WHERE ttype='reference'
-         UNION
-        SELECT 'ir.translation', 'name'
+
+        SELECT model,
+               name
+        FROM ir_model_fields
+        WHERE ttype = 'reference'
+        UNION
+        SELECT 'ir.translation',
+               'name'
+
     """
     )
+    cr.execute(_query, locals())
+    old_like = "{},%".format(old)
+    substr_from = len(old)
     for model, column in cr.fetchall():
         table = table_of_model(cr, model)
         if column_exists(cr, table, column):
-            cr.execute(
-                """UPDATE "{table}"
-                             SET {column}='{new}' || substring({column} FROM '%#",%#"' FOR '#')
-                           WHERE {column} LIKE '{old},%'
-                       """.format(
-                    table=table, column=column, new=new, old=old
-                )
-            )
+            _params = {"table": sql.Identifier(table), "column": sql.Identifier(column)}
+
+            _query = sql.SQL(
+                """
+
+                UPDATE {table}
+                SET {column} = %(new)s || substring({column} FROM %(substr_from)s)
+                WHERE {column} LIKE %(old_like)s
+
+            """
+            ).format(**_params)
+            cr.execute(_query, locals())
 
     if table_exists(cr, "ir_values"):
         column_read, cast_write = _ir_values_value(cr)
-        query = """
+        _params = {
+            "cast0": sql.SQL(cast_write.partition("%s")[0]),
+            "cast2": sql.SQL(cast_write.partition("%s")[2]),
+            "column": sql.SQL(column_read),
+        }
+
+        _query = sql.SQL(
+            """
+
             UPDATE ir_values
-               SET value = {cast[0]}'{new}' || substring({column} FROM '%#",%#"' FOR '#'){cast[2]}
-             WHERE {column} LIKE '{old},%'
-        """.format(
-            column=column_read, new=new, old=old, cast=cast_write.partition("%s")
-        )
-        cr.execute(query)
+            SET value = {cast0}%(new)s || substring({column} FROM %(substr_from)s){cast2}
+            WHERE {column} LIKE %(old_like)s
 
-    cr.execute(
         """
+        ).format(**_params)
+        cr.execute(_query, locals())
+
+    old_underscore = old.replace(".", "_")
+    new_underscore = new.replace(".", "_")
+    new_name = "model_%s" % new_underscore
+    old_name = "model_%s" % old_underscore
+    new_field_name = "field_%s" % new_underscore
+    old_field_prefix_length = len(old_underscore) + 6
+    name_like = (IMD_FIELD_PATTERN % (old_underscore, "%")).replace("_", r"\_")
+    _query = sql.SQL(
+        """
+
         UPDATE ir_translation
-           SET name=%s
-         WHERE name=%s
-           AND type IN ('constraint', 'sql_constraint', 'view', 'report', 'rml', 'xsl')
-    """,
-        [new, old],
-    )
-    old_u = old.replace(".", "_")
-    new_u = new.replace(".", "_")
+        SET name = %(new)s
+        WHERE name = %(old)s
+          AND TYPE IN ('constraint',
+                       'sql_constraint',
+                       'view',
+                       'report',
+                       'rml',
+                       'xsl');
 
-    cr.execute(
-        "UPDATE ir_model_data SET name=%s WHERE model=%s AND name=%s",
-        ("model_%s" % new_u, "ir.model", "model_%s" % old_u),
-    )
 
-    cr.execute(
-        """UPDATE ir_model_data
-                     SET name=%s || substring(name from %s)
-                   WHERE model='ir.model.fields'
-                     AND name LIKE %s
-               """,
-        [
-            "field_%s" % new_u,
-            len(old_u) + 6,
-            (IMD_FIELD_PATTERN % (old_u, "%")).replace("_", r"\_"),
-        ],
+        UPDATE ir_model_data
+        SET name = %(new_name)s
+        WHERE model = 'ir.model'
+          AND name = %(old_name)s;
+
+
+        UPDATE ir_model_data
+        SET name = %(new_field_name)s || substring(name FROM %(old_field_prefix_length)s)
+        WHERE model = 'ir.model.fields'
+          AND name LIKE %(name_like)s;
+
+    """
     )
+    cr.execute(_query, locals())
 
     col_prefix = ""
     if not column_exists(cr, "ir_act_server", "condition"):
         col_prefix = "--"  # sql comment the line
 
-    cr.execute(
+    _params = {
+        "col_prefix": sql.SQL(col_prefix),
+        "old": sql.SQL(old),
+        "new": sql.SQL(new),
+    }
+    _query = sql.SQL(
         r"""
+
         UPDATE ir_act_server
-           SET {col_prefix} condition=regexp_replace(condition, '([''"]){old}\1', '\1{new}\1', 'g'),
-               code=regexp_replace(code, '([''"]){old}\1', '\1{new}\1', 'g')
-    """.format(
-            col_prefix=col_prefix, old=old.replace(".", r"\."), new=new
-        )
-    )
+        -- regex matching model name wrapped by quotes eg in env['model.name'] or env["model.name"]
+        SET {col_prefix} condition = regexp_replace(condition, '([''"]){old}\1', '\1{new}\1', 'g'),
+                                   code = regexp_replace(code, '([''"]){old}\1', '\1{new}\1', 'g')
+    """
+    ).format(**_params)
+    cr.execute(_query, locals())
 
 
 def replace_record_references(cr, old, new, replace_xmlid=True):
@@ -1407,11 +2025,17 @@ def replace_record_references_batch(
         column_read, cast_write = _ir_values_value(cr)
 
         for table, fk, _, _ in get_fk(cr, table_of_model(cr, model_src)):
-            query = """
+            _params = {"table": sql.Identifier(table), "fk": sql.Identifier(fk)}
+
+            jmap_query = sql.SQL(
+                """
+
                 UPDATE {table} t
-                   SET {fk} = ('{jmap}'::json->>{fk}::varchar)::int4
-                 WHERE {fk} IN %(old)s
+                SET {fk} = (%(jmap)s::json->>{fk}::varchar)::int4
+                WHERE {fk} IN %(old)s
+
             """
+            ).format(**_params)
 
             col2 = None
             if not column_exists(cr, table, "id"):
@@ -1419,78 +2043,110 @@ def replace_record_references_batch(
                 cols = get_columns(cr, table, ignore=(fk,))[0]
                 assert len(cols) == 1  # it's a m2, should have only 2 columns
                 col2 = cols[0]
-                query = (
-                    """
-                    WITH _existing AS (
-                        SELECT {col2} FROM {table} WHERE {fk} IN %%(new)s
-                    )
-                    %s
-                    AND NOT EXISTS(SELECT 1 FROM _existing WHERE {col2}=t.{col2});
-                    DELETE FROM {table} WHERE {fk} IN %%(old)s;
-                """
-                    % query
-                )
+                _params = {
+                    "table": sql.Identifier(table),
+                    "fk": sql.Identifier(fk),
+                    "col2": sql.Identifier(col2),
+                    "jmap_query": jmap_query,
+                }
 
-            cr.execute(
-                query.format(table=table, fk=fk, jmap=jmap, col2=col2),
-                dict(new=new, old=old),
-            )
+                _query = sql.SQL(
+                    """
+
+                     WITH _existing AS
+                      ( SELECT {col2}
+                       FROM {table}
+                       WHERE {fk} IN %(new)s ) {jmap_query}
+                    AND NOT EXISTS
+                      (SELECT 1
+                       FROM _existing
+                       WHERE {col2}=t.{col2});
+
+
+                    DELETE
+                    FROM {table} WHERE {fk} IN %(old)s;
+
+                """
+                ).format(**_params)
+                cr.execute(_query, locals())
 
             if not col2:  # it's a model
                 # update default values
                 # TODO? update all defaults using 1 query (using `WHERE (model, name) IN ...`)
                 model = model_of_table(cr, table)
                 if table_exists(cr, "ir_values"):
-                    query = """
-                         UPDATE ir_values
-                            SET value = {cast[0]} '{pmap}'::json->>({col}) {cast[2]}
-                          WHERE key='default'
-                            AND model=%s
-                            AND name=%s
-                            AND {col} IN %s
-                    """.format(
-                        col=column_read, cast=cast_write.partition("%s"), pmap=pmap
-                    )
-                    cr.execute(query, [model, fk, pmap_keys])
-                else:
-                    cr.execute(
+                    _params = {
+                        "cast0": sql.SQL(cast_write.partition("%s")[0]),
+                        "cast2": sql.SQL(cast_write.partition("%s")[2]),
+                        "column": sql.Identifier(column_read),
+                    }
+
+                    _query = sql.SQL(
                         """
+
+                        UPDATE ir_values
+                        SET value = {cast0} %(pmap)s::json->>({column}) {cast2}
+                        WHERE KEY='default'
+                          AND model = %(model)s
+                          AND name = %(fk)s
+                          AND {column} IN %(pmap_keys)s
+
+                    """
+                    ).format(**_params)
+                    cr.execute(_query, locals())
+                else:
+                    _query = sql.SQL(
+                        """
+
                         UPDATE ir_default d
-                           SET json_value = '{smap}'::json->>json_value
-                          FROM ir_model_fields f
-                         WHERE f.id = d.field_id
-                           AND f.model = %s
-                           AND f.name = %s
-                           AND d.json_value IN %s
-                    """.format(
-                            smap=smap
-                        ),
-                        [model, fk, smap_keys],
+                        SET json_value = %(smap)s::json->>json_value
+                        FROM ir_model_fields f
+                        WHERE f.id = d.field_id
+                          AND model = %(model)s
+                          AND name = %(fk)s
+                          AND d.json_value IN %(pmap_keys)s
+
+                    """
                     )
+                    cr.execute(_query, locals())
 
     # indirect references
     for ir in indirect_references(cr, bound_only=True):
         if ir.table == "ir_model_data" and not replace_xmlid:
             continue
-        upd = ""
+        _params = {}
+        upd = sql.SQL("")
         if ir.res_model:
-            upd += '"{ir.res_model}" = %(model_dst)s,'
+            _params["model"] = sql.Identifier(ir.res_model)
+            upd += sql.SQL("{model} = %(model_dst)s,").format(**_params)
         if ir.res_model_id:
-            upd += '"{ir.res_model_id}" = (SELECT id FROM ir_model WHERE model=%(model_dst)s),'
-        upd = upd.format(ir=ir)
-        where = ir.model_filter(placeholder="%(model_src)s")
+            _params["model_id"] = sql.Identifier(ir.res_model_id)
+            upd += sql.SQL(
+                "{model_id} = (SELECT id FROM ir_model WHERE model = %(model_dst)s),"
+            ).format(**_params)
+        where = sql.SQL(ir.model_filter(placeholder="%(model_src)s"))
 
-        query = """
-            UPDATE "{ir.table}"
-               SET {upd}
-                   "{ir.res_id}" = ('{jmap}'::json->>{ir.res_id}::varchar)::int4
-             WHERE {where}
-               AND {ir.res_id} IN %(old)s
-        """.format(
-            **locals()
+        _params = dict(
+            {
+                "table": sql.Identifier(ir.table),
+                "res_id": sql.Identifier(ir.res_id),
+                "upd": upd,
+                "where": where,
+            },
+            **_params
         )
 
-        cr.execute(query, locals())
+        _query = sql.SQL(
+            """
+
+            UPDATE {table}
+            SET {upd} {res_id} = (%(jmap)s::json->>{res_id}::varchar)::int4
+            WHERE {where}
+              AND {res_id} IN %(old)s
+
+        """
+        ).format(**_params)
+        cr.execute(_query, locals())
 
     # reference fields
     cmap, cmap_keys = genmap("%s,%%d" % model_src, "%s,%%d" % model_dst)
@@ -1498,15 +2154,18 @@ def replace_record_references_batch(
     for model, column in cr.fetchall():
         table = table_of_model(cr, model)
         if column_exists(cr, table, column):
-            cr.execute(
-                """UPDATE "{table}"
-                             SET "{column}" = '{cmap}'::json->>"{column}"
-                           WHERE "{column}" IN %s
-                       """.format(
-                    table=table, column=column, cmap=cmap
-                ),
-                [cmap_keys],
-            )
+            _params = {"table": sql.Identifier(table), "column": sql.Identifier(column)}
+
+            _query = sql.SQL(
+                """
+
+                UPDATE {table}
+                SET {column} = %(cmap)s::json->>{column}
+                WHERE {column} IN %(cmap_keys)s
+
+            """
+            ).format(**_params)
+            cr.execute(_query, locals())
 
 
 # ---------- UI Utilities (Views, Menus) ----------
@@ -1514,18 +2173,22 @@ def _update_view_key(cr, old, new):
     """Update the key of a view."""
     if not column_exists(cr, "ir_ui_view", "key"):
         return
-    cr.execute(
+
+    _query = sql.SQL(
         """
+
+
         UPDATE ir_ui_view v
-           SET key = CONCAT(%s, '.', x.name)
-          FROM ir_model_data x
-         WHERE x.model = 'ir.ui.view'
-           AND x.res_id = v.id
-           AND x.module = %s
-           AND v.key = CONCAT(x.module, '.', x.name)
-    """,
-        [new, old],
+        SET key = CONCAT(%(new)s, '.', x.name)
+        FROM ir_model_data x
+        WHERE x.model = 'ir.ui.view'
+          AND x.res_id = v.id
+          AND x.module = %(old)s
+          AND v.key = CONCAT(x.module, '.', x.name)
+
+    """
     )
+    cr.execute(_query, locals())
 
 
 def remove_view(
@@ -1561,15 +2224,17 @@ def remove_view(
             return
 
         module, _, name = xml_id.partition(".")
-        cr.execute(
-            """SELECT model
-                      FROM ir_model_data
-                      WHERE module={} AND
-                            name={}
-                   """.format(
-                module, name
-            )
+        _query = sql.SQL(
+            """
+
+            SELECT model
+            FROM ir_model_data
+            WHERE module = %(module)s
+              AND name = %(name)s
+
+        """
         )
+        cr.execute(_query, locals())
 
         [model] = cr.fetchone()
         if model != "ir.ui.view":
@@ -1578,35 +2243,39 @@ def remove_view(
             )
     elif not silent or deactivate_custom:
         # search matching xmlid for logging or renaming of custom views
-        cr.execute(
-            """SELECT module, name
-                      FROM ir_model_data
-                      WHERE model='ir.ui.view' AND
-                            res_id={}
-                   """.format(
-                view_id
-            )
+
+        _query = sql.SQL(
+            """
+
+            SELECT module,
+                   name
+            FROM ir_model_data
+            WHERE model='ir.ui.view'
+              AND res_id = %(view_id)s
+
+        """
         )
+        cr.execute(_query, locals())
         if cr.rowcount:
             xml_id = "%s.%s" % cr.fetchone()
         else:
             xml_id = "?"
 
-    cr.execute(
+    _query = sql.SQL(
         """
-        SELECT v.id, x.module || '.' || x.name
-        FROM ir_ui_view v LEFT JOIN
-           ir_model_data x
-           ON (
-               v.id = x.res_id AND
-               x.model = 'ir.ui.view' AND
-               x.module !~ '^_'
-            )
-        WHERE v.inherit_id = {};
-    """.format(
-            view_id
-        )
+
+
+        SELECT v.id,
+               x.module || '.' || x.name
+        FROM ir_ui_view v
+        LEFT JOIN ir_model_data x ON ( v.id = x.res_id
+                                      AND x.model = 'ir.ui.view'
+                                      AND x.module !~ '^_' )
+        WHERE v.inherit_id = %(view_id)s
+
+    """
     )
+    cr.execute(_query, locals())
     for child_id, child_xml_id in cr.fetchall():
         if child_xml_id:
             if not silent:
@@ -1631,14 +2300,18 @@ def remove_view(
                         xml_id,
                         view_id,
                     )
-                disable_view_query = """
+                disable_view_query = sql.SQL(
+                    """
+
                     UPDATE ir_ui_view
-                    SET name = (name || ' - old view, inherited from ' || %s),
+                    SET name = (name || ' - old view, inherited from ' || %(xml_id)s),
                         model = (model || '.disabled'),
                         inherit_id = NULL
-                        WHERE id = %s
+                    WHERE id = %(child_id)s
+
                 """
-                cr.execute(disable_view_query, (xml_id, child_id))
+                )
+                cr.execute(disable_view_query, locals())
             else:
                 raise MigrationError(
                     "Deprecated custom view with ID %s needs migration, "
@@ -1647,7 +2320,7 @@ def remove_view(
                 )
     if not silent:
         _logger.info("Dropping deprecated built-in view %s (ID %s).", xml_id, view_id)
-    remove_record(cr, ("ir.ui.view", view_id))
+    remove_record(cr, xml_id)
 
 
 @contextmanager
@@ -1673,65 +2346,86 @@ def edit_view(cr, xmlid=None, view_id=None, skip_if_noupdate=False):
             raise ValueError("Please use fully qualified name <module>.<name>")
 
         module, _, name = xmlid.partition(".")
-        cr.execute(
-            """SELECT res_id, noupdate
-                        FROM ir_model_data
-                       WHERE module = %s
-                         AND name = %s
-                   """,
-            (module, name),
+
+        _query = sql.SQL(
+            """
+
+            SELECT res_id,
+                   noupdate
+            FROM ir_model_data
+            WHERE module = %(module)s
+              AND name = %(name)s
+
+        """
         )
+        cr.execute(_query, locals())
         data = cr.fetchone()
         if data:
             view_id, noupdate = data
 
     if view_id and not (skip_if_noupdate and noupdate):
-        cr.execute(
-            """SELECT arch_db
-                        FROM ir_ui_view
-                       WHERE id={}
-                   """.format(
-                view_id
-            )
+        _query = sql.SQL(
+            """
+
+            SELECT arch_db
+            FROM ir_ui_view
+            WHERE id = %(view_id)s
+
+        """
         )
+        cr.execute(_query, locals())
         [arch] = cr.fetchone() or [None]
         if arch:
             arch = lxml.etree.fromstring(arch)
             yield arch
-            cr.execute(
-                "UPDATE ir_ui_view SET arch_db={} WHERE id={}".format(
-                    lxml.etree.tostring(arch, encoding="unicode"), view_id
-                )
+            arch = lxml.etree.tostring(arch, encoding="unicode")
+            _query = sql.SQL(
+                """
+
+                UPDATE ir_ui_view
+                SET arch_db = %(arch)s
+                WHERE id = %(view_id)s
+
+            """
             )
+            cr.execute(_query, locals())
 
 
 def remove_menus(cr, menu_ids):
     """Remove ir.ui.menu records with the provided ids (and their children)."""
     if not menu_ids:
         return
-    cr.execute(
+    menu_ids = tuple(menu_ids)
+    _query = sql.SQL(
         """
-        WITH RECURSIVE tree(id) AS (
-            SELECT id
-              FROM ir_ui_menu
-             WHERE id IN %s
-             UNION
-            SELECT m.id
-              FROM ir_ui_menu m
-              JOIN tree t ON (m.parent_id = t.id)
-        )
-        DELETE FROM ir_ui_menu m
-              USING tree t
-              WHERE m.id = t.id
-          RETURNING m.id
-    """,
-        [tuple(menu_ids)],
+
+         WITH RECURSIVE tree(id) AS
+          ( SELECT id
+           FROM ir_ui_menu
+           WHERE id IN %(menu_ids)s
+           UNION SELECT m.id
+           FROM ir_ui_menu m
+           JOIN tree t ON (m.parent_id = t.id) )
+        DELETE
+        FROM ir_ui_menu m USING tree t
+        WHERE m.id = t.id RETURNING m.id
+
+    """
     )
+    cr.execute(_query, locals())
     ids = tuple(x[0] for x in cr.fetchall())
     if ids:
-        cr.execute(
-            "DELETE FROM ir_model_data WHERE model='ir.ui.menu' AND res_id IN %s", [ids]
+        _query = sql.SQL(
+            """
+
+            DELETE
+            FROM ir_model_data
+            WHERE model='ir.ui.menu'
+              AND res_id IN %(ids)s
+
+        """
         )
+        cr.execute(_query, locals())
 
 
 # ---------- Database/Postgres Utilities ----------
@@ -1741,15 +2435,19 @@ def dbuuid(cr):
     """Get the uuid of the current database.
 
     In the case of a duplicated database, return the original uuid."""
-    cr.execute(
+
+    _query = sql.SQL(
         """
+
         SELECT value
-          FROM ir_config_parameter
-         WHERE key IN ('database.uuid', 'origin.database.uuid')
-      ORDER BY key DESC
-         LIMIT 1
+        FROM ir_config_parameter
+        WHERE KEY IN ('database.uuid',
+                      'origin.database.uuid')
+        ORDER BY KEY DESC LIMIT 1
+
     """
     )
+    cr.execute(_query, locals())
     return cr.fetchone()[0]
 
 
@@ -1795,14 +2493,17 @@ def table_of_model(cr, model):
 
 def table_exists(cr, table):
     """Check if the specified table exists."""
-    cr.execute(
-        """SELECT 1
-                    FROM information_schema.tables
-                   WHERE table_name = %s
-                     AND table_type = 'BASE TABLE'
-               """,
-        (table,),
+    _query = sql.SQL(
+        """
+
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_name = %(table)s
+          AND table_type = 'BASE TABLE'
+
+    """
     )
+    cr.execute(_query, locals())
     return cr.fetchone() is not None
 
 
@@ -1813,14 +2514,17 @@ def column_exists(cr, table, column):
 
 def column_type(cr, table, column):
     """Get the type of the column on the specified table."""
-    cr.execute(
-        """SELECT udt_name
-                    FROM information_schema.columns
-                   WHERE table_name = %s
-                     AND column_name = %s
-               """,
-        (table, column),
+    _query = sql.SQL(
+        """
+
+        SELECT udt_name
+        FROM information_schema.columns
+        WHERE table_name = %(table)s
+          AND column_name = %(column)s
+
+    """
     )
+    cr.execute(_query, locals())
     r = cr.fetchone()
     return r[0] if r else None
 
@@ -1838,9 +2542,19 @@ def create_column(cr, table, column, definition):
         # TODO compare with definition
         pass
     else:
-        cr.execute(
-            """ALTER TABLE "{}" ADD COLUMN "{}" {}""".format(table, column, definition)
-        )
+        _params = {
+            "table": sql.Identifier(table),
+            "column": sql.Identifier(column),
+            "definition": sql.SQL(definition),
+        }
+        _query = sql.SQL(
+            """
+
+            ALTER TABLE {table} ADD COLUMN {column} {definition}
+
+        """
+        ).format(**_params)
+        cr.execute(_query, locals())
 
 
 def remove_column(cr, table, column, cascade=False):
@@ -1853,10 +2567,19 @@ def remove_column(cr, table, column, cascade=False):
     """
     if column_exists(cr, table, column):
         drop_depending_views(cr, table, column)
-        drop_cascade = " CASCADE" if cascade else ""
-        cr.execute(
-            'ALTER TABLE "{}" DROP COLUMN "{}"{}'.format(table, column, drop_cascade)
-        )
+        _params = {
+            "table": sql.Identifier(table),
+            "column": sql.Identifier(column),
+            "drop_cascade": sql.SQL("CASCADE" if cascade else ""),
+        }
+        _query = sql.SQL(
+            """
+
+            ALTER TABLE {table} DROP COLUMN {column} {drop_cascade}
+
+        """
+        ).format(**_params)
+        cr.execute(_query, locals())
 
 
 def get_columns(cr, table, ignore=("id",), extra_prefixes=None):
@@ -1869,44 +2592,51 @@ def get_columns(cr, table, ignore=("id",), extra_prefixes=None):
         :param table: table toinspect
         :param ignore=('id'): tuple of column names to ignore
     """
-    select = "quote_ident(column_name)"
+    select = sql.SQL("quote_ident(column_name)")
     params = []
     if extra_prefixes:
-        select = ",".join(
-            [select] + ["concat(%%s, '.', %s)" % select] * len(extra_prefixes)
+        select = sql.SQL(",").join(
+            [select]
+            + [sql.SQL("concat(%s, '.', {select}").format(select)] * len(extra_prefixes)
         )
         params = list(extra_prefixes)
 
-    cr.execute(
-        """SELECT {select}
-                   FROM information_schema.columns
-                  WHERE table_name=%s
-                    AND column_name NOT IN %s
-               """.format(
-            select=select
-        ),
-        params + [table, ignore],
-    )
+    _params = {"select": select}
+    _query = sql.SQL(
+        """
+
+        SELECT {select}
+        FROM information_schema.columns
+        WHERE table_name = %s
+          AND column_name NOT IN %s
+
+    """
+    ).format(**_params)
+    cr.execute(_query, params + [table, ignore])  # Params is a list of unnamed args
     return list(zip(*cr.fetchall()))
 
 
 def get_depending_views(cr, table, column):
     """Get the list of SQL views depending on the specified column."""
     # http://stackoverflow.com/a/11773226/75349
-    q = """
-        SELECT distinct quote_ident(dependee.relname)
+    _query = sql.SQL(
+        """
+
+        SELECT DISTINCT quote_ident(dependee.relname)
         FROM pg_depend
         JOIN pg_rewrite ON pg_depend.objid = pg_rewrite.oid
-        JOIN pg_class as dependee ON pg_rewrite.ev_class = dependee.oid
-        JOIN pg_class as dependent ON pg_depend.refobjid = dependent.oid
+        JOIN pg_class AS dependee ON pg_rewrite.ev_class = dependee.oid
+        JOIN pg_class AS dependent ON pg_depend.refobjid = dependent.oid
         JOIN pg_attribute ON pg_depend.refobjid = pg_attribute.attrelid
-            AND pg_depend.refobjsubid = pg_attribute.attnum
-        WHERE dependent.relname = %s
-        AND pg_attribute.attnum > 0
-        AND pg_attribute.attname = %s
-        AND dependee.relkind='v'
+        AND pg_depend.refobjsubid = pg_attribute.attnum
+        WHERE dependent.relname = %(table)s
+          AND pg_attribute.attnum > 0
+          AND pg_attribute.attname = %(column)s
+          AND dependee.relkind='v'
+
     """
-    cr.execute(q, [table, column])
+    )
+    cr.execute(_query, locals())
     return map(itemgetter(0), cr.fetchall())
 
 
@@ -1917,8 +2647,16 @@ def drop_depending_views(cr, table, column):
     SQL views (auto=False models) crash after the upgrade, forcing them
     to be regenerated during the uprade.
     """
-    for v in get_depending_views(cr, table, column):
-        cr.execute("DROP VIEW IF EXISTS {} CASCADE".format(v))
+    for view in get_depending_views(cr, table, column):
+        _params = {"view": sql.Identifier(view)}
+        _query = sql.SQL(
+            """
+
+            DROP VIEW IF EXISTS {} CASCADE
+
+        """
+        ).format(**_params)
+        cr.execute(_query, locals())
 
 
 def get_fk(cr, table):
@@ -1933,25 +2671,34 @@ def get_fk(cr, table):
                  - n: set null
                  - d: set default
     """
-    q = """SELECT quote_ident(cl1.relname) as table,
-                  quote_ident(att1.attname) as column,
-                  quote_ident(con.conname) as conname,
-                  con.confdeltype
-             FROM pg_constraint as con, pg_class as cl1, pg_class as cl2,
-                  pg_attribute as att1, pg_attribute as att2
-            WHERE con.conrelid = cl1.oid
-              AND con.confrelid = cl2.oid
-              AND array_lower(con.conkey, 1) = 1
-              AND con.conkey[1] = att1.attnum
-              AND att1.attrelid = cl1.oid
-              AND cl2.relname = %s
-              AND att2.attname = 'id'
-              AND array_lower(con.confkey, 1) = 1
-              AND con.confkey[1] = att2.attnum
-              AND att2.attrelid = cl2.oid
-              AND con.contype = 'f'
+
+    _query = sql.SQL(
+        """
+
+        SELECT quote_ident(cl1.relname) AS TABLE,
+               quote_ident(att1.attname) AS COLUMN,
+               quote_ident(con.conname) AS conname,
+               con.confdeltype
+        FROM pg_constraint AS con,
+             pg_class AS cl1,
+             pg_class AS cl2,
+             pg_attribute AS att1,
+             pg_attribute AS att2
+        WHERE con.conrelid = cl1.oid
+          AND con.confrelid = cl2.oid
+          AND array_lower(con.conkey, 1) = 1
+          AND con.conkey[1] = att1.attnum
+          AND att1.attrelid = cl1.oid
+          AND cl2.relname = %(table)s
+          AND att2.attname = 'id'
+          AND array_lower(con.confkey, 1) = 1
+          AND con.confkey[1] = att2.attnum
+          AND att2.attrelid = cl2.oid
+          AND con.contype = 'f'
+
     """
-    cr.execute(q, (table,))
+    )
+    cr.execute(_query, locals())
     return cr.fetchall()
 
 
@@ -1966,9 +2713,19 @@ def delete_unused(cr, table, xmlids, set_noupdate=True):
         :param set_noupdate=True: if set, the noupdate field of all the provided
                                   xmlids will be set to True
     """
-    sub = " UNION ".join(
+    sub = sql.SQL(" UNION ").join(
         [
-            'SELECT 1 FROM "{}" x WHERE x."{}"=t.id'.format(f[0], f[1])
+            sql.SQL(
+                """
+
+                SELECT 1
+                FROM "{}" x
+                WHERE x."{}" = t.id
+
+            """.format(
+                    f[0], f[1]
+                )
+            )
             for f in get_fk(cr, table)
         ]
     )
@@ -1976,17 +2733,19 @@ def delete_unused(cr, table, xmlids, set_noupdate=True):
     idmap.pop(None, None)
     if not sub or not idmap:
         return
-    cr.execute(
+    idmap = list(idmap)
+    _params = {"table": sql.Identifier(table), "subquery": sub}
+    _query = sql.SQL(
         """
+
         SELECT id
-          FROM "{}" t
-         WHERE id=ANY(%s)
-           AND NOT EXISTS({})
-    """.format(
-            table, sub
-        ),
-        [list(idmap)],
-    )
+        FROM {table} t
+        WHERE id = ANY(%(idmap)s)
+          AND NOT EXISTS({subquery})
+
+    """
+    ).format(**_params)
+    cr.execute(_query, locals())
 
     for (tid,) in cr.fetchall():
         remove_record(cr, idmap.pop(tid))
@@ -2002,25 +2761,39 @@ def get_index_on(cr, table, *columns):
         :rtype: list(tuple)
         :return:a [(index_name, unique, pk)]
     """
-    cr.execute(
+    columns = sorted(columns)
+    _query = sql.SQL(
         """
-        select name, indisunique, indisprimary
-          from (select quote_ident(i.relname) as name,
-                       x.indisunique, x.indisprimary,
-                       array_agg(a.attname::text order by a.attname) as attrs
-                  FROM (select *, unnest(indkey) as unnest_indkey from pg_index) x
-                  JOIN pg_class c ON c.oid = x.indrelid
-                  JOIN pg_class i ON i.oid = x.indexrelid
-                  JOIN pg_attribute a ON (a.attrelid=c.oid AND a.attnum=x.unnest_indkey)
-                 WHERE (c.relkind = ANY (ARRAY['r'::"char", 'm'::"char"]))
-                   AND i.relkind = 'i'::"char"
-                   AND c.relname = %s
-              group by 1, 2, 3
-          ) idx
-         where attrs = %s
-    """,
-        [table, sorted(columns)],
+
+
+        SELECT name,
+               indisunique,
+               indisprimary
+        FROM
+          (SELECT quote_ident(i.relname) AS name,
+                  x.indisunique,
+                  x.indisprimary,
+                  array_agg(a.attname::text
+                            ORDER BY a.attname) AS attrs
+           FROM
+             (SELECT *,
+                     unnest(indkey) AS unnest_indkey
+              FROM pg_index) x
+           JOIN pg_class c ON c.oid = x.indrelid
+           JOIN pg_class i ON i.oid = x.indexrelid
+           JOIN pg_attribute a ON (a.attrelid=c.oid
+                                   AND a.attnum=x.unnest_indkey)
+           WHERE (c.relkind = ANY (ARRAY['r'::"char", 'm'::"char"]))
+             AND i.relkind = 'i'::"char"
+             AND c.relname = %(table)s
+           GROUP BY 1,
+                    2,
+                    3 ) idx
+        WHERE attrs = %(columns)s
+
+    """
     )
+    cr.execute(_query, locals())
     return cr.fetchone()
 
 
@@ -2054,7 +2827,17 @@ def pg_text2html(s):
 
 def view_exists(cr, view):
     """Check if the specified SQL view exists."""
-    cr.execute("SELECT 1 FROM information_schema.views WHERE table_name=%s", [view])
+
+    _query = sql.SQL(
+        """
+
+        SELECT 1
+        FROM information_schema.views
+        WHERE TABLE_NAME=%(view)s
+
+    """
+    )
+    cr.execute(_query, locals())
     return bool(cr.rowcount)
 
 
@@ -2074,14 +2857,18 @@ def remove_record(cr, name, deactivate=False, active_field="active"):
     if "." not in name:
         raise ValueError("Please use fully qualified name <module>.<name>")
     module, name = name.split(".")
-    cr.execute(
-        """DELETE FROM ir_model_data
-                        WHERE module = %s
-                            AND name = %s
-                    RETURNING model, res_id
-                """,
-        (module, name),
+
+    _query = sql.SQL(
+        """
+
+        DELETE
+        FROM ir_model_data
+        WHERE module = %(module)s
+          AND name = %(name)s RETURNING model, res_id
+
+    """
     )
+    cr.execute(_query, locals())
     data = cr.fetchone()
     if not data:
         return
@@ -2093,17 +2880,39 @@ def remove_record(cr, name, deactivate=False, active_field="active"):
     except Exception:
         if not deactivate or not active_field:
             raise
-        cr.execute(
-            'UPDATE "{}" SET "{}"=%s WHERE id=%s'.format(table, active_field),
-            (False, res_id),
-        )
+        _params = {
+            "table": sql.Identifier(table),
+            "active_field": sql.Identifier(active_field),
+        }
+        _query = sql.SQL(
+            """
+
+            UPDATE {table}
+            SET {active_field} = FALSE
+            WHERE id = %(res_id)s
+
+        """
+        ).format(**_params)
+        cr.execute(_query, locals())
     else:
         # delete all indirect references to the record (e.g. mail_message entries, etc.)
         for ir in indirect_references(cr, bound_only=True):
-            query = 'DELETE FROM "{}" WHERE {} AND "{}"=%s'.format(
-                ir.table, ir.model_filter(), ir.res_id
-            )
-            cr.execute(query, [model, res_id])
+            _params = {
+                "table": sql.Identifier(ir.table),
+                "where_clause": sql.SQL(ir.model_filter(placeholder="%(model)s")),
+                "res_id": sql.Identifier(ir.res_id),
+            }
+            _query = sql.SQL(
+                """
+
+                DELETE
+                FROM {table}
+                WHERE {where_clause}
+                  AND {res_id} = %(res_id)s
+
+            """
+            ).format(**_params)
+            cr.execute(_query, locals())
 
 
 def splitlines(s):
@@ -2358,13 +3167,20 @@ def register_unanonymization_query(
         :param query_type='sql':
         :param sequence=10:
     """
-    cr.execute(
-        """INSERT INTO ir_model_fields_anonymization_migration_fix(
-                    target_version, sequence, query_type, model_name, field_name, query
-                  ) VALUES (%s, %s, %s, %s, %s, %s)
-               """,
-        [release.major_version, sequence, query_type, model, field, query],
+    target_version = release.major_version
+    _query = sql.SQL(
+        """
+        INSERT INTO ir_model_fields_anonymization_migration_fix( target_version, sequence, query_type, model_name, field_name, query )
+        VALUES (%(target_version)s,
+                %(sequence)s,
+                %(query_type)s,
+                %(model)s,
+                %(field)s,
+                %(query)s)
+
+    """
     )
+    cr.execute(_query, locals())
 
 
 def _rst2html(rst):
@@ -2400,14 +3216,18 @@ def ref(cr, xmlid):
         raise ValueError("Please use fully qualified name <module>.<name>")
 
     module, name = xmlid.split(".")
-    cr.execute(
-        """SELECT res_id
-                    FROM ir_model_data
-                   WHERE module = %s
-                     AND name = %s
-                """,
-        (module, name),
+
+    _query = sql.SQL(
+        """
+
+        SELECT res_id
+        FROM ir_model_data
+        WHERE module = %(module)s
+          AND name = %(name)s
+
+    """
     )
+    cr.execute(_query, locals())
     data = cr.fetchone()
     if data:
         return data[0]
@@ -2424,26 +3244,39 @@ def rename_xmlid(cr, old, new, noupdate=None):
 
     old_module, old_name = old.split(".")
     new_module, new_name = new.split(".")
-    nu = "" if noupdate is None else (", noupdate=" + str(bool(noupdate)).lower())
-    cr.execute(
-        """UPDATE ir_model_data
-                     SET module=%s, name=%s
-                         {}
-                   WHERE module=%s AND name=%s
-               RETURNING model, res_id
-               """.format(
-            nu
-        ),
-        (new_module, new_name, old_module, old_name),
+    noupdate = sql.SQL(
+        "" if noupdate is None else (", noupdate=" + str(bool(noupdate)).lower())
     )
+    _params = {"noupdate": noupdate}
+    _query = sql.SQL(
+        """
+
+        UPDATE ir_model_data
+        SET module = %(new_module)s,
+            name=%(new_name)s {noupdate}
+        WHERE module = %(old_module)s
+          AND name = %(old_name)s RETURNING model,
+                      res_id
+
+    """
+    ).format(**_params)
+    cr.execute(_query, locals())
     data = cr.fetchone()
     if data:
         model, rid = data
         if model == "ir.ui.view":
             _update_view_key(cr, old, new)
-            cr.execute(
-                "UPDATE ir_ui_view SET key=%s WHERE id=%s AND key=%s", [new, rid, old]
-            )
+            _query = sql.SQL(
+                """
+
+                UPDATE ir_ui_view
+                SET key = %(new)s
+                WHERE id = %(rid)s
+                  AND key = %(old)s
+
+            """
+            ).format(**_params)
+            cr.execute(_query, locals())
         return rid
     return None
 
@@ -2454,15 +3287,18 @@ def force_noupdate(cr, xmlid, noupdate=True, warn=False):
         raise ValueError("Please use fully qualified name <module>.<name>")
 
     module, name = xmlid.split(".")
-    cr.execute(
-        """UPDATE ir_model_data
-                     SET noupdate = %s
-                   WHERE module = %s
-                     AND name = %s
-                     AND noupdate != %s
-                """,
-        (noupdate, module, name, noupdate),
+    _query = sql.SQL(
+        """
+
+        UPDATE ir_model_data
+        SET noupdate = %(noupdate)s
+        WHERE module = %(module)s
+          AND name = %(name)s
+          AND noupdate != %(noupdate)s
+
+    """
     )
+    cr.execute(_query, locals())
     if noupdate is False and cr.rowcount and warn:
         _logger.warning("Customizations on `%s` might be lost!", xmlid)
     return cr.rowcount
@@ -2487,39 +3323,62 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
         raise ValueError("Please use fully qualified name <module>.<name>")
 
     module, name = xmlid.split(".")
-    cr.execute(
-        """SELECT id, res_id
-                    FROM ir_model_data
-                   WHERE module = %s
-                     AND name = %s
-                """,
-        (module, name),
+    _query = sql.SQL(
+        """
+
+        SELECT id,
+               res_id
+        FROM ir_model_data
+        WHERE module = %(module)s
+          AND name = %(name)s
+
+    """
     )
+    cr.execute(_query, locals())
 
     table = table_of_model(cr, model)
     data = cr.fetchone()
     if data:
         data_id, res_id = data
         # check that record still exists
-        cr.execute("SELECT id FROM %s WHERE id=%%s" % table, (res_id,))
+        _params = {"table": sql.Identifier(table)}
+        _query = sql.SQL(
+            """
+            SELECT id
+            FROM {table}
+            WHERE id = %(res_id)s
+
+        """
+        ).format(**_params)
+        cr.execute(_query, locals())
         if cr.fetchone():
             return res_id
     else:
         data_id = None
 
     # search for existing record marching values
-    where = []
+    where = sql.Composed([])
     data = ()
     for field, value in values.items():
+        _params = {"field": sql.Identifier(field)}
         if value:
-            where += ["{} = %s".format(field)]
+            _params["value"] = sql.Literal(value)
+            where += sql.Composed([sql.SQL("{field} = {value}").format(**_params)])
             data += (value,)
         else:
-            where += ["{} IS NULL".format(field)]
+            where += sql.Composed([sql.SQL("{field} IS NULL").format(**_params)])
             data += ()
 
-    query = ("SELECT id FROM %s WHERE " % table) + " AND ".join(where)
-    cr.execute(query, data)
+    _params = {"table": sql.Identifier(table), "where": where.join(" AND ")}
+    _query = sql.SQL(
+        """
+        SELECT id
+        FROM {table}
+        WHERE {where}
+
+    """
+    ).format(**_params)
+    cr.execute(_query, locals())
     record = cr.fetchone()
     if not record:
         return None
@@ -2528,22 +3387,31 @@ def ensure_xmlid_match_record(cr, xmlid, model, values):
 
     # update xmlid table
     if data_id:
-        cr.execute(
-            """UPDATE ir_model_data
-                         SET res_id=%s
-                       WHERE id=%s
-                   """,
-            (res_id, data_id),
-        )
-    else:
-        cr.execute(
-            """INSERT INTO ir_model_data
-                                  (module, name, model, res_id, noupdate)
-                           VALUES (%s, %s, %s, %s, %s)
-                   """,
-            (module, name, model, res_id, True),
-        )
+        _query = sql.SQL(
+            """
 
+            UPDATE ir_model_data
+            SET res_id = %(res_id)s
+            WHERE id = %(data_id)s
+
+        """
+        )
+        cr.execute(_query, locals())
+    else:
+
+        _query = sql.SQL(
+            """
+
+            INSERT INTO ir_model_data (module, name, model, res_id, noupdate)
+            VALUES (%(module)s,
+                    %(name)s,
+                    %(model)s,
+                    %(res_id)s,
+                    TRUE)
+
+        """
+        )
+        cr.execute(_query, locals())
     return res_id
 
 

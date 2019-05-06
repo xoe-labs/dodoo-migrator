@@ -1,0 +1,5 @@
+--- !Migration
+version: '0.4.0'
+app_version: '10.0'
+pre_scripts:
+- ./tests/data/test_odoo_migration/all_queries_syntax.py
