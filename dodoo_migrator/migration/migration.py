@@ -25,7 +25,12 @@ else:
 PY3 = sys.version_info[0] == 3
 string_type = str if PY3 else basestring  # noqa
 
-_logger = logging.getLogger(__name__)
+BOLD = u"\033[1m"
+RESET = u"\033[0m"
+GREEN = u"\033[1;32m"
+BLUE = u"\033[1;34m"
+
+_logger = logging.getLogger(BOLD + u"DODOO MIGRATOR" + RESET)
 
 MIG_SERVICES = ("odoo", "oca")
 MIG_OPERATIONS = (
@@ -73,6 +78,8 @@ post_scripts:  # Executed after migration service
 - ./migrate/my-post-script.py
 
 """
+
+ROOT_LOGGER_LEVEL = logging.getLogger().getEffectiveLevel()
 
 
 class Migration(yaml.YAMLObject):
@@ -132,17 +139,6 @@ class Migration(yaml.YAMLObject):
             raise ParseError(message, YAML_EXAMPLE)
         return obj
 
-    def _mark(self, env):
-        """ Mark operations of this migration in the provided environment """
-        with env.registry.cursor() as cursor:
-            imm = env(cr=cursor)["ir.module.module"]
-            for name in self.upgrade:
-                imm.search([("name", "=", name)]).button_upgrade()
-            for name in self.install:
-                imm.search([("name", "=", name)]).button_install()
-            for name in self.uninstall:
-                imm.search([("name", "=", name)]).button_uninstall()
-
     def _remove(self, env):
         """ Cleanup module from ir.module.module
         The only use case is, if you completely drop a module without
@@ -152,31 +148,85 @@ class Migration(yaml.YAMLObject):
             _logger.warning("remove operation is not supported for Odoo < 10.0.")
             return
         for name in self.remove:
+            _logger.info(u"migrate to %s (Remove Module: %s).", self.version, name)
             with env.registry.cursor() as cr:
                 migration.remove_module(cr, name)
 
     def _run_pre_scripts(self, cr):
         for script in self.pre_scripts:
+            _logger.info(u"migrate to %s (Pre Script: %s).", self.version, script)
             exec(open(os.path.abspath(script)).read(), {"cr": cr})
+
+    def _run_odoo_reconciliation(self, env):
+        with env.registry.cursor() as cursor:
+            access_logger = logging.getLogger("odoo.addons.base.models.ir_module")
+            access_logger.setLevel(logging.WARNING)
+            imm = env(cr=cursor)["ir.module.module"]
+            imm.update_list()
+            for name in self.upgrade:
+                _logger.info(
+                    u"migrate to %s (Mark for 'to upgrade': %s).", self.version, name
+                )
+                imm.search([("name", "=", name)]).button_upgrade()
+            for name in self.install:
+                _logger.info(
+                    u"migrate to %s (Mark for 'to install': %s).", self.version, name
+                )
+                imm.search([("name", "=", name)]).button_install()
+            for name in self.uninstall:
+                _logger.info(
+                    u"migrate to %s (Mark for 'to remove': %s).", self.version, name
+                )
+                imm.search([("name", "=", name)]).button_uninstall()
+            access_logger.setLevel(ROOT_LOGGER_LEVEL)
+        _logger.info(
+            BOLD + BLUE + u"migrate to %s (Odoo Reconciliation Loop: 'to upgrade' / "
+            u"'to install' / 'to remove')." + RESET,
+            self.version,
+        )
+        try:
+            translate_logger = logging.getLogger("odoo.tools.translate")
+            translate_logger.setLevel(logging.WARNING)
+            fields_logger = logging.getLogger("odoo.fields")
+            fields_logger.setLevel(logging.WARNING)
+            modules_registry_logger = logging.getLogger("odoo.modules.registry")
+            modules_registry_logger.name = (
+                BOLD + BLUE + u"odoo.modules.registry" + RESET
+            )
+            odoo.modules.registry.Registry.new(
+                env.registry.db_name, update_module="migration"
+            )
+            modules_registry_logger.name = "odoo.modules.registry"
+        except AttributeError:  # Odoo <= 9.0
+            translate_logger = logging.getLogger("opernerp.tools.translate")
+            translate_logger.setLevel(logging.WARNING)
+            fields_logger = logging.getLogger("opernerp.fields")
+            fields_logger.setLevel(logging.WARNING)
+            modules_registry_logger = logging.getLogger("openerp.modules.registry")
+            modules_registry_logger.name = (
+                BOLD + BLUE + u"openerp.modules.registry" + RESET
+            )
+            odoo.modules.registry.RegistryManager.new(
+                env.registry.db_name, update_module="migration"
+            )
+            modules_registry_logger.name = "openerp.modules.registry"
+        finally:
+            translate_logger.setLevel(ROOT_LOGGER_LEVEL)
+            fields_logger.setLevel(ROOT_LOGGER_LEVEL)
 
     def _run_post_scripts(self, cr):
         for script in self.post_scripts:
+            _logger.info(u"migrate to %s (Post Script: %s).", self.version, script)
             exec(open(os.path.abspath(script)).read(), {"cr": cr})
 
     def run(self, env):
         """ Run the actual migration """
-        self._mark(env)
         env.reset()
         self._run_pre_scripts(env.cr)
-        try:
-            odoo.modules.registry.Registry.new(
-                env.registry.db_name, update_module="migration"
-            )
-        except AttributeError:  # Odoo <= 9.0
-            odoo.modules.registry.RegistryManager.new(
-                env.registry.db_name, update_module="migration"
-            )
+        if self.upgrade or self.install or self.uninstall:
+            self._run_odoo_reconciliation(env)
         self._remove(env)
+
         self._run_post_scripts(env.cr)
         return env
 
@@ -266,7 +316,8 @@ class MigrationSpec(object):
             # In case of --since dating to already applied verions
             if self._is_applied(mig):
                 _logger.info(
-                    u"migration %s is already applied - nothing to do.", (mig.version,)
+                    BOLD + u"migration %s is already applied - nothing to do." + RESET,
+                    mig.version,
                 )
                 continue
 
@@ -276,11 +327,17 @@ class MigrationSpec(object):
 
             if mig.is_noop():
                 _logger.info(
-                    u"migration %s is a non operation - only register bump.",
-                    (mig.version,),
+                    BOLD
+                    + u"migration %s is a non operation - only register bump."
+                    + RESET,
+                    mig.version,
                 )
             else:
+                _logger.info(BOLD + u"start migrating to %s." + RESET, mig.version)
                 mig.run(self.env)
+                _logger.info(
+                    BOLD + GREEN + u"finished migrating to %s." + RESET, mig.version
+                )
 
             self.mig_table.finish(
                 str(mig.version),

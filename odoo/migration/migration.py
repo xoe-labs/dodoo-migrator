@@ -894,8 +894,8 @@ def remove_field(cr, model, fieldname, cascade=False):
                array_agg(aw.id)
         FROM ir_model_fields f
         JOIN ir_act_window aw ON aw.res_model = f.model
-        WHERE f.model = %s
-          AND f.name = %s
+        WHERE f.model = %(model)s
+          AND f.name = %(fieldname)s
         GROUP BY f.model
 
     """
@@ -953,7 +953,7 @@ def remove_field(cr, model, fieldname, cascade=False):
 
         """
         )
-        cr.execute(_query, **locals())
+        cr.execute(_query, locals())
 
     # cleanup translations
     _query = sql.SQL(
@@ -1420,15 +1420,16 @@ def recompute_fields(cr, model, fields, ids=None, logger=_logger, chunk_size=256
         :param integer chunk_size: batch size for recomputing (default: 256)
     """
     if ids is None:
+        _params = {"table": sql.Identifier(table_of_model(cr, model))}
 
         _query = sql.SQL(
             """
 
-            SELECT id FROM "%(table)s"
+            SELECT id FROM {table}
 
         """
-        )
-        cr.execute(_query, dict(table=table_of_model(cr, model)))
+        ).format(**_params)
+        cr.execute(_query, locals())
         ids = tuple(map(itemgetter(0), cr.fetchall()))
 
     Model = env(cr)[model]
