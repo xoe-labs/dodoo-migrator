@@ -43,7 +43,7 @@ class UpgradeApi(object):
         # Fix padding
         self.public_key = public_key
         self.private_key = private_key
-        self.filename = "db.dump"
+        self.filename = "db.tar.gz"
         self._request = None
         self._request_id = None
         self._key = None

@@ -2,12 +2,22 @@
 # Copyright 2017-2018 XOE Corp. SAS
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
 
+import gzip
+import logging
+import shutil
 import tempfile
 from contextlib import closing
 
 import odoo
 
 from . import keys, odoo_service
+
+BOLD = u"\033[1m"
+RESET = u"\033[0m"
+GREEN = u"\033[1;32m"
+BLUE = u"\033[1;34m"
+
+_logger = logging.getLogger(BOLD + u"UPGRADE SERVICE" + RESET)
 
 
 class DatabaseApi(object):
@@ -191,14 +201,21 @@ def submit(env, service, aim, target):
                 Db.public_key,
                 Db.private_key,
             )
+
+            _logger.info(u"creating request ...")
             _sync_odoo(Db, Service)
+            _logger.info(u"request %s created.", Db.request)
         cr.commit()
 
-    f = tempfile.NamedTemporaryFile(mode="w+b")
+    f = gzip.open(tempfile.mktemp(), "wb")
+    _logger.info(u"creating backup ...")
     _get_backup(env.cr.dbname, f)
+    _logger.info(u"uploading ...")
     Service.upload(f.name)
+    _logger.info(u"request processing...")
     Service.process()
     f.close()
+    _logger.info(u"Now you need patience...")
 
 
 def retrieve(env, service):
@@ -215,23 +232,27 @@ def retrieve(env, service):
                 Db.public_key,
                 Db.private_key,
             )
+            _logger.info(u"loading state from db ...")
             _sync_odoo(Db, Service)
 
+    _logger.info(u"downloading ...")
     Service.download(f.name)
+    _logger.info(u"restoring migrated ...")
     _drop_database(env.cr.dbname)
     _restore_backup(env.cr.dbname, f)
 
 
 def _get_backup(db, f):
-    previous = odoo.tools.config["list_db"]
-    odoo.tools.config["list_db"] = True
-    odoo.service.db.dump_db(db, f, backup_format="")
-    odoo.tools.config["list_db"] = previous
+    cmd = ["pg_dump", "--no-privileges", "--no-owner", "--format=t", db]
+    _, stdout = odoo.tools.exec_pg_command_pipe(*cmd)
+    shutil.copyfileobj(stdout, f)
 
 
 def _restore_backup(db, f):
     previous = odoo.tools.config["list_db"]
     odoo.tools.config["list_db"] = True
+    t = tempfile.NamedTemporaryFile(mode="w+b")
+    shutil.copyfileobj(f, t)
     odoo.service.db.restore_db(db, f.name, copy=False)
     odoo.tools.config["list_db"] = previous
 
