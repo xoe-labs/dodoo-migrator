@@ -331,7 +331,7 @@ class MigrationSpec(object):
 
             if mig.service and mig.version not in self.pending:
                 _logger.info(BOLD + u"submit to %s for migration." + RESET, mig.service)
-                mode = "test"
+                mode = "production"
                 db.submit(self.env, mig.service, mode, mig.app_version)
                 return
 
