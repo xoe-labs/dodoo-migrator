@@ -50,6 +50,7 @@ class UpgradeApi(object):
         self.public_key = public_key
         self.private_key = private_key
         self.filename = "db.tar.gz"
+        self.upgraded_filename = "upgraded_db.zip"
         self._request = None
         self._request_id = None
         self._key = None
@@ -173,10 +174,13 @@ class UpgradeApi(object):
     def has_converted_to_zip(self):
         return self.status().get("filestore") is True
 
-    def download(self, local_file_path, f):
+    def download(self, f):
         if not self.is_ready():
             raise NotReadyError
-        self.download_https(f)
+        try:
+            self.download_sftp(f.name)
+        except Exception:
+            self.download_https(f)
 
     def download_https(self, f):
         url = self.status()["upgraded_dump_url"]
@@ -184,8 +188,9 @@ class UpgradeApi(object):
             shutil.copyfileobj(remote, f)
 
     def download_sftp(self, local_file_path):
+        self.request_sftp_access()
         with pysftp.Connection(**self._cinfo()) as sftp:
-            sftp.get(self.filename, local_file_path)
+            sftp.get(self.upgraded_filename, local_file_path)
 
     def _cinfo(self):
         cnopts = pysftp.CnOpts()

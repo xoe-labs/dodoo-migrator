@@ -185,7 +185,9 @@ def _sync_odoo(Db, Service):
         Db.request = Service.request_id
         Db.token = Service.key
 
-    if Db.sftp_hostname and Db.sftp_port and Db.sftp_user:
+    if (Db.sftp_hostname and Db.sftp_port and Db.sftp_user) and not (
+        Service.hostname and Service.sftp_port and Service.sftp_user
+    ):
         Service.hostname = Db.sftp_hostname
         Service.sftp_port = Db.sftp_port
         Service.sftp_user = Db.sftp_user
@@ -238,6 +240,8 @@ def retrieve(env, service):
                 Db.public_key,
                 Db.private_key,
             )
+            _logger.info(u"regenerating sftp access ...")
+            Service.request_sftp_access()
             _logger.info(u"loading state from db ...")
             _sync_odoo(Db, Service)
 
@@ -247,7 +251,7 @@ def retrieve(env, service):
         f = tempfile.NamedTemporaryFile(mode="w+b")
     else:
         f = gzip.open(tempfile.mktemp(), "wb")
-    Service.download(f.name, f)
+    Service.download(f)
     _logger.info(u"restoring migrated ...")
     # Release lock and close cursor
     env.cr.close()
