@@ -2260,7 +2260,7 @@ def remove_view(
         if cr.rowcount:
             xml_id = "%s.%s" % cr.fetchone()
         else:
-            xml_id = "?"
+            xml_id = None
 
     _query = sql.SQL(
         """
@@ -2321,7 +2321,8 @@ def remove_view(
                 )
     if not silent:
         _logger.info("Dropping deprecated built-in view %s (ID %s).", xml_id, view_id)
-    remove_record(cr, xml_id)
+    if xml_id:
+        remove_record(cr, xml_id)
 
 
 @contextmanager

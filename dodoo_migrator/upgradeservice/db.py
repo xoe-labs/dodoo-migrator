@@ -248,11 +248,20 @@ def retrieve(env, service):
         f = gzip.open(tempfile.mktemp(), "wb")
     Service.download(f.name, f)
     _logger.info(u"restoring migrated ...")
+    # Release lock and close cursor
+    env.cr.close()
     cli.LOCK.stop = True
     cli.LOCK.join()
+    cli.LOCK_CONNECTION.close()
+
     _drop_database(env.cr.dbname)
     _restore_backup(env.cr.dbname, f)
+
+    # Reestablish lock and reset cursor
+    cli.LOCK_CONNECTION = env.registry.cursor()
+    cli.LOCK = cli.ApplicationLock(cli.LOCK_CONNECTION)
     cli.LOCK.start()
+    env.cr = env.registry.cursor()
 
 
 def _get_backup(db, f):

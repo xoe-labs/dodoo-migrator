@@ -47,6 +47,7 @@ ADVISORY_LOCK_IDENT = 7141416871301361999
 
 MIGRATION_SCRIPTS_PATH = None
 LOCK = None
+LOCK_CONNECTION = None
 
 
 def get_additional_mig_path():
@@ -104,10 +105,10 @@ def do_migrate(env, file, since, until):
     :param until: Migrate up to this version
     :type until: Version
     """
-
-    with env.registry.cursor() as lock_connection:
+    global LOCK_CONNECTION
+    with env.registry.cursor() as LOCK_CONNECTION:
         global LOCK
-        LOCK = ApplicationLock(lock_connection)
+        LOCK = ApplicationLock(LOCK_CONNECTION)
         LOCK.start()
 
         while not LOCK.acquired:
