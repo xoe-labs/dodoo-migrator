@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright 2017-2018 XOE Corp. SAS
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
+from __future__ import absolute_import
 
 import gzip
 import logging
@@ -15,7 +16,7 @@ import psycopg2
 import odoo
 
 from . import keys, odoo_service
-from .. import cli
+from ... import cli
 from .merge_copytree import copytree
 
 BOLD = u"\033[1m"

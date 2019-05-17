@@ -4,13 +4,18 @@
 
 import base64
 import shutil
-import urllib.request
 
 import paramiko
 import pysftp
 import requests
 
 from .errors import NotReadyError, NotUploadedError, OdooUpgradeServiceError
+
+try:
+    from urllib.request import urlopen
+except ImportError:
+    from urllib2 import urlopen
+
 
 try:
     from StringIO import StringIO
@@ -175,7 +180,7 @@ class UpgradeApi(object):
 
     def download_https(self, f):
         url = self.status()["upgraded_dump_url"]
-        with urllib.request.urlopen(url) as remote:
+        with urlopen(url) as remote:
             shutil.copyfileobj(remote, f)
 
     def download_sftp(self, local_file_path):

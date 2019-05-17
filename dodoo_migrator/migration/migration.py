@@ -14,9 +14,13 @@ import semver
 import yaml
 from dodoo import odoo
 
-from ..upgradeservice import db, errors
 from .database import MigrationTable
 from .exceptions import MigrationErrorGap, MigrationErrorUnfinished, ParseError
+
+try:
+    from . import upgradeservice
+except ImportError:
+    upgradeservice = None
 
 if odoo.release.version_info[0] > 10:
     from odoo import migration
@@ -311,11 +315,11 @@ class MigrationSpec(object):
                 continue
 
             # Reconcile migrations through service
-            if mig.version in self.pending:
+            if mig.version in self.pending and upgradeservice:
                 try:
                     _logger.info(BOLD + u"retrieve from %s." + RESET, mig.service)
-                    db.retrieve(self.env, mig.service)
-                except errors.NotReadyError:
+                    upgradeservice.db.retrieve(self.env, mig.service)
+                except upgradeservice.errors.NotReadyError:
                     _logger.info(
                         BOLD + u"%s migration not yet ready." + RESET, mig.service
                     )
@@ -329,10 +333,10 @@ class MigrationSpec(object):
                     mig.service,
                 )
 
-            if mig.service and mig.version not in self.pending:
+            if mig.service and mig.version not in self.pending and upgradeservice:
                 _logger.info(BOLD + u"submit to %s for migration." + RESET, mig.service)
                 mode = "production"
-                db.submit(self.env, mig.service, mode, mig.app_version)
+                upgradeservice.db.submit(self.env, mig.service, mode, mig.app_version)
                 return
 
             # Apply own migrations
