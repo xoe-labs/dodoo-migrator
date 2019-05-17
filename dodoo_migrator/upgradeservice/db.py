@@ -4,13 +4,19 @@
 
 import gzip
 import logging
+import os
 import shutil
 import tempfile
+import zipfile
 from contextlib import closing
+
+import psycopg2
 
 import odoo
 
 from . import keys, odoo_service
+from .. import cli
+from .merge_copytree import copytree
 
 BOLD = u"\033[1m"
 RESET = u"\033[0m"
@@ -219,7 +225,6 @@ def submit(env, service, aim, target):
 
 
 def retrieve(env, service):
-    f = tempfile.NamedTemporaryFile(mode="w+b")
     with env.registry.cursor() as cr:
         Db = DatabaseApi(cr)
         if service == "odoo":
@@ -236,10 +241,18 @@ def retrieve(env, service):
             _sync_odoo(Db, Service)
 
     _logger.info(u"downloading ...")
-    Service.download(f.name)
+    if Service.has_converted_to_zip():
+        _logger.info(u"was converted to ZIP ...")
+        f = tempfile.NamedTemporaryFile(mode="w+b")
+    else:
+        f = gzip.open(tempfile.mktemp(), "wb")
+    Service.download(f.name, f)
     _logger.info(u"restoring migrated ...")
+    cli.LOCK.stop = True
+    cli.LOCK.join()
     _drop_database(env.cr.dbname)
     _restore_backup(env.cr.dbname, f)
+    cli.LOCK.start()
 
 
 def _get_backup(db, f):
@@ -249,12 +262,39 @@ def _get_backup(db, f):
 
 
 def _restore_backup(db, f):
-    previous = odoo.tools.config["list_db"]
-    odoo.tools.config["list_db"] = True
-    t = tempfile.NamedTemporaryFile(mode="w+b")
-    shutil.copyfileobj(f, t)
-    odoo.service.db.restore_db(db, f.name, copy=False)
-    odoo.tools.config["list_db"] = previous
+    odoo.service.db._create_empty_database(db)
+    with odoo.tools.osutil.tempdir() as dump_dir:
+        if zipfile.is_zipfile(f):
+            with zipfile.ZipFile(f, "r") as z:
+                # only extract known members!
+                filestore = [m for m in z.namelist() if m.startswith("filestore/")]
+                z.extractall(dump_dir, ["dump.sql"] + filestore)
+
+                if filestore:
+                    filestore_path = os.path.join(dump_dir, "filestore")
+
+            pg_cmd = "psql"
+            pg_args = ["-q", "-f", os.path.join(dump_dir, "dump.sql")]
+        else:
+            pg_cmd = "pg_restore"
+            pg_args = ["--no-owner", f]
+
+        args = []
+        args.append("--dbname=" + db)
+        pg_args = args + pg_args
+        if odoo.tools.exec_pg_command(pg_cmd, *pg_args):
+            raise Exception("Couldn't restore database")
+        conn = odoo.sql_db.db_connect(db)
+        with closing(conn.cursor()) as cr:
+            if filestore_path:
+                filestore_dest = odoo.tools.config.filestore(db)
+                copytree(filestore_path, filestore_dest)
+            if odoo.tools.config["unaccent"]:
+                try:
+                    with cr.savepoint():
+                        cr.execute("CREATE EXTENSION unaccent")
+                except psycopg2.Error:
+                    pass
 
 
 def _drop_database(db_name):

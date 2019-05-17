@@ -46,6 +46,7 @@ _logger = logging.getLogger(__name__)
 ADVISORY_LOCK_IDENT = 7141416871301361999
 
 MIGRATION_SCRIPTS_PATH = None
+LOCK = None
 
 
 def get_additional_mig_path():
@@ -105,21 +106,22 @@ def do_migrate(env, file, since, until):
     """
 
     with env.registry.cursor() as lock_connection:
-        lock = ApplicationLock(lock_connection)
-        lock.start()
+        global LOCK
+        LOCK = ApplicationLock(lock_connection)
+        LOCK.start()
 
-        while not lock.acquired:
+        while not LOCK.acquired:
             time.sleep(0.5)
         else:
-            if lock.replica:
+            if LOCK.replica:
                 # when a replica could finally acquire a lock, it
                 # means that the main process has finished the
                 # migration. In that case, the replica should just
                 # exit because the migration already took place. We
                 # wait till then to be sure we won't run Odoo before
                 # the main process could finish the migration.
-                lock.stop = True
-                lock.join()
+                LOCK.stop = True
+                LOCK.join()
                 return
             # we are not in the replica: go on for the migration
 
@@ -127,8 +129,8 @@ def do_migrate(env, file, since, until):
             mig_spec = migration.MigrationSpec(env, file, since, until)
             mig_spec.run()
         finally:
-            lock.stop = True
-            lock.join()
+            LOCK.stop = True
+            LOCK.join()
 
 
 @click.command(cls=dodoo.CommandWithOdooEnv)

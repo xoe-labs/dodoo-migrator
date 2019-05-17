@@ -3,6 +3,8 @@
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
 
 import base64
+import shutil
+import urllib.request
 
 import paramiko
 import pysftp
@@ -40,7 +42,6 @@ class UpgradeApi(object):
         self.target = target
         self.contract = contract
         self.email = email
-        # Fix padding
         self.public_key = public_key
         self.private_key = private_key
         self.filename = "db.tar.gz"
@@ -164,11 +165,21 @@ class UpgradeApi(object):
     def is_ready(self):
         return self.status().get("state") == "done"
 
-    def download(self, local_file_path):
-        cinfo = self._cinfo()
+    def has_converted_to_zip(self):
+        return self.status().get("filestore") is True
+
+    def download(self, local_file_path, f):
         if not self.is_ready():
             raise NotReadyError
-        with pysftp.Connection(**cinfo) as sftp:
+        self.download_https(f)
+
+    def download_https(self, f):
+        url = self.status()["upgraded_dump_url"]
+        with urllib.request.urlopen(url) as remote:
+            shutil.copyfileobj(remote, f)
+
+    def download_sftp(self, local_file_path):
+        with pysftp.Connection(**self._cinfo()) as sftp:
             sftp.get(self.filename, local_file_path)
 
     def _cinfo(self):
