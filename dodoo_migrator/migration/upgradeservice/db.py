@@ -197,8 +197,8 @@ def _sync_odoo(Db, Service):
         Db.sftp_user = Service.sftp_user
 
 
-def submit(env, service, aim, target):
-    with env.registry.cursor() as cr:
+def submit(conn, service, aim, target):
+    with conn.cursor() as cr:
         Db = DatabaseApi(cr)
         if service == "odoo":
             Service = odoo_service.UpgradeApi(
@@ -218,7 +218,7 @@ def submit(env, service, aim, target):
 
     f = gzip.open(tempfile.mktemp(), "wb")
     _logger.info(u"creating backup ...")
-    _get_backup(env.cr.dbname, f)
+    _get_backup(conn.dbname, f)
     _logger.info(u"uploading ...")
     Service.upload(f.name)
     _logger.info(u"request processing...")
@@ -227,8 +227,8 @@ def submit(env, service, aim, target):
     _logger.info(u"Now you need patience...")
 
 
-def retrieve(env, service):
-    with env.registry.cursor() as cr:
+def retrieve(conn, service):
+    with conn.cursor() as cr:
         Db = DatabaseApi(cr)
         if service == "odoo":
             Service = odoo_service.UpgradeApi(
@@ -254,19 +254,18 @@ def retrieve(env, service):
     Service.download(f)
     _logger.info(u"restoring migrated ...")
     # Release lock and close cursor
-    env.cr.close()
     cli.LOCK.stop = True
     cli.LOCK.join()
-    cli.LOCK_CONNECTION.close()
+    cli.LOCK_CR.close()
+    conn.close_db(conn.dbname)
 
-    _drop_database(env.cr.dbname)
-    _restore_backup(env.cr.dbname, f)
+    _drop_database(conn.dbname)
+    _restore_backup(conn.dbname, f)
 
     # Reestablish lock and reset cursor
-    cli.LOCK_CONNECTION = env.registry.cursor()
-    cli.LOCK = cli.ApplicationLock(cli.LOCK_CONNECTION)
+    cli.LOCK_CR = conn.cursor()
+    cli.LOCK = cli.ApplicationLock(cli.LOCK_CR)
     cli.LOCK.start()
-    env.cr = env.registry.cursor()
 
 
 def _get_backup(db, f):

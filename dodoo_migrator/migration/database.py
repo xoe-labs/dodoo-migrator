@@ -10,14 +10,14 @@ import semver
 
 
 class MigrationTable(object):
-    def __init__(self, env):
-        self.env = env
+    def __init__(self, conn):
+        self.conn = conn
         self.table_name = "dodoo_migrator"
         self._versions = None
         self._create_if_not_exists()
 
     def _create_if_not_exists(self):
-        with self.env.registry.cursor() as cursor:
+        with self.conn.cursor() as cursor:
             query = """
             CREATE TABLE IF NOT EXISTS {} (
                 number VARCHAR NOT NULL,
@@ -45,7 +45,7 @@ class MigrationTable(object):
         )
         if self._versions is not None:
             return self._versions
-        with self.env.registry.cursor() as cursor:
+        with self.conn.cursor() as cursor:
             query = """
             SELECT number,
                    app_version,
@@ -71,7 +71,7 @@ class MigrationTable(object):
         return self._versions
 
     def start(self, version, app_version, timestamp, service):
-        with self.env.registry.cursor() as cursor:
+        with self.conn.cursor() as cursor:
             query = """
             INSERT INTO {}
             (number, app_version, date_start, service)
@@ -83,7 +83,7 @@ class MigrationTable(object):
         self._versions = None  # reset versions cache
 
     def finish(self, version, timestamp, operations):
-        with self.env.registry.cursor() as cursor:
+        with self.conn.cursor() as cursor:
             query = """
             UPDATE {}
             SET date_done = %s,

@@ -25,10 +25,12 @@ from __future__ import print_function
 import logging
 import threading
 import time
+from contextlib import contextmanager
 
 import click
 import dodoo
 import semver
+from dodoo import odoo
 
 from . import migration
 
@@ -47,7 +49,7 @@ ADVISORY_LOCK_IDENT = 7141416871301361999
 
 MIGRATION_SCRIPTS_PATH = None
 LOCK = None
-LOCK_CONNECTION = None
+LOCK_CR = None
 
 
 def get_additional_mig_path():
@@ -93,11 +95,11 @@ class ApplicationLock(threading.Thread):
                 time.sleep(0.5)
 
 
-def do_migrate(env, file, since, until):
+def do_migrate(conn, file, since, until):
     """Perform a migration according to file.
 
-    :param env: The odoo environment
-    :type env: odoo.api.Environment
+    :param conn: A odoo database connection
+    :type conn: odoo.sql_db.Connection
     :param file: The migration file to be applied
     :type config: file
     :param since: Migrate from this version onwards
@@ -105,10 +107,10 @@ def do_migrate(env, file, since, until):
     :param until: Migrate up to this version
     :type until: Version
     """
-    global LOCK_CONNECTION
-    with env.registry.cursor() as LOCK_CONNECTION:
+    global LOCK_CR
+    with conn.cursor() as LOCK_CR:
         global LOCK
-        LOCK = ApplicationLock(LOCK_CONNECTION)
+        LOCK = ApplicationLock(LOCK_CR)
         LOCK.start()
 
         while not LOCK.acquired:
@@ -127,14 +129,32 @@ def do_migrate(env, file, since, until):
             # we are not in the replica: go on for the migration
 
         try:
-            mig_spec = migration.MigrationSpec(env, file, since, until)
+            mig_spec = migration.MigrationSpec(conn, file, since, until)
             mig_spec.run()
         finally:
             LOCK.stop = True
             LOCK.join()
 
 
-@click.command(cls=dodoo.CommandWithOdooEnv)
+@contextmanager
+def MigrationEnvironment(self):
+    conn = odoo.sql_db.db_connect(self.database)
+    with odoo.api.Environment.manage():
+        try:
+            yield conn
+        finally:
+            if odoo.release.version_info[0] < 10:
+                odoo.modules.registry.RegistryManager.delete(self.database)
+            else:
+                odoo.modules.registry.Registry.delete(self.database)
+            odoo.sql_db.close_db(self.database)
+    odoo.sql_db.close_all()
+
+
+@click.command(
+    cls=dodoo.CommandWithOdooEnv,
+    env_options={"environment_manager": MigrationEnvironment},
+)
 @dodoo.options.addons_path_opt(True)
 @dodoo.options.db_opt(True)
 @click.option(
@@ -187,6 +207,8 @@ def migrate(env, file, mig_directory, since, until, metrics):
     A prometheus metrics endpoint is instrumented into the script. This can be
     scraped by a monitoring solution or a status page.
     """
+
+    # env is just a Connection object, here
 
     global MIGRATION_SCRIPTS_PATH
     MIGRATION_SCRIPTS_PATH = mig_directory

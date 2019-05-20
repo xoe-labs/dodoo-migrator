@@ -87,6 +87,26 @@ post_scripts:  # Executed after migration service
 ROOT_LOGGER_LEVEL = logging.getLogger().getEffectiveLevel()
 
 
+def load_base(db, force_demo=False, status=None, update_module=False):
+    odoo.modules.initialize_sys_path()
+    with db.cursor() as cr:
+        # This is a brand new registry, just created in
+        # odoo.modules.registry.Registry.new().
+        registry = odoo.registry(cr.dbname)
+        graph = odoo.modules.graph.Graph()
+        graph.add_module(cr, "base", [])
+        report = registry._assertion_report
+        loaded_modules, processed_modules = odoo.modules.load_module_graph(
+            cr,
+            graph,
+            status,
+            perform_checks=update_module,
+            report=report,
+            models_to_check=set(),
+        )
+        registry.setup_models(cr)
+
+
 class Migration(yaml.YAMLObject):
     """ A single migration defined by a YAML document """
 
@@ -144,7 +164,7 @@ class Migration(yaml.YAMLObject):
             raise ParseError(message, YAML_EXAMPLE)
         return obj
 
-    def _remove(self, env):
+    def _remove(self, cr):
         """ Cleanup module from ir.module.module
         The only use case is, if you completely drop a module without
         replacement. In case of a replacement, include this cleanup into the
@@ -154,41 +174,47 @@ class Migration(yaml.YAMLObject):
             return
         for name in self.remove:
             _logger.info(u"migrate to %s (Remove Module: %s).", self.version, name)
-            with env.registry.cursor() as cr:
-                migration.remove_module(cr, name)
+            migration.remove_module(cr, name)
 
     def _run_pre_scripts(self, cr):
         for script in self.pre_scripts:
             _logger.info(u"migrate to %s (Pre Script: %s).", self.version, script)
             exec(open(os.path.abspath(script)).read(), {"cr": cr})
 
-    def _run_odoo_reconciliation(self, env):
-        with env.registry.cursor() as cursor:
-            access_logger = logging.getLogger("odoo.addons.base.models.ir_module")
-            access_logger.setLevel(logging.WARNING)
-            imm = env(cr=cursor)["ir.module.module"]
-            imm.update_list()
-            for name in self.upgrade:
-                _logger.info(
-                    u"migrate to %s (Mark for 'to upgrade': %s).", self.version, name
-                )
-                imm.search([("name", "=", name)]).button_upgrade()
-            for name in self.install:
-                _logger.info(
-                    u"migrate to %s (Mark for 'to install': %s).", self.version, name
-                )
-                imm.search([("name", "=", name)]).button_install()
-            for name in self.uninstall:
-                _logger.info(
-                    u"migrate to %s (Mark for 'to remove': %s).", self.version, name
-                )
-                imm.search([("name", "=", name)]).button_uninstall()
-            access_logger.setLevel(ROOT_LOGGER_LEVEL)
+    def _run_odoo_reconciliation(self, cr):
+        _load_modules = odoo.modules.load_modules
+        odoo.modules.load_modules = load_base
+        miniregistry = odoo.registry(cr.dbname)
+        uid = odoo.SUPERUSER_ID
+        env = odoo.api.Environment(cr, uid, {})
+        access_logger = logging.getLogger("odoo.addons.base.models.ir_module")
+        access_logger.setLevel(logging.WARNING)
+        imm = env["ir.module.module"]
+        imm.update_list()
+        for name in self.upgrade:
+            _logger.info(
+                u"migrate to %s (Mark for 'to upgrade': %s).", self.version, name
+            )
+            imm.search([("name", "=", name)]).button_upgrade()
+        for name in self.install:
+            _logger.info(
+                u"migrate to %s (Mark for 'to install': %s).", self.version, name
+            )
+            imm.search([("name", "=", name)]).button_install()
+        for name in self.uninstall:
+            _logger.info(
+                u"migrate to %s (Mark for 'to remove': %s).", self.version, name
+            )
+            imm.search([("name", "=", name)]).button_uninstall()
+        access_logger.setLevel(ROOT_LOGGER_LEVEL)
+        miniregistry.delete(cr.dbname)
+        odoo.modules.load_modules = _load_modules
         _logger.info(
             BOLD + BLUE + u"migrate to %s (Odoo Reconciliation Loop: 'to upgrade' / "
             u"'to install' / 'to remove')." + RESET,
             self.version,
         )
+        cr.commit()
         try:
             translate_logger = logging.getLogger("odoo.tools.translate")
             translate_logger.setLevel(logging.WARNING)
@@ -198,9 +224,7 @@ class Migration(yaml.YAMLObject):
             modules_registry_logger.name = (
                 BOLD + BLUE + u"odoo.modules.registry" + RESET
             )
-            odoo.modules.registry.Registry.new(
-                env.registry.db_name, update_module="migration"
-            )
+            odoo.modules.registry.Registry.new(cr.dbname, update_module="migration")
             modules_registry_logger.name = "odoo.modules.registry"
         except AttributeError:  # Odoo <= 9.0
             translate_logger = logging.getLogger("opernerp.tools.translate")
@@ -212,7 +236,7 @@ class Migration(yaml.YAMLObject):
                 BOLD + BLUE + u"openerp.modules.registry" + RESET
             )
             odoo.modules.registry.RegistryManager.new(
-                env.registry.db_name, update_module="migration"
+                cr.dbname, update_module="migration"
             )
             modules_registry_logger.name = "openerp.modules.registry"
         finally:
@@ -224,16 +248,17 @@ class Migration(yaml.YAMLObject):
             _logger.info(u"migrate to %s (Post Script: %s).", self.version, script)
             exec(open(os.path.abspath(script)).read(), {"cr": cr})
 
-    def run(self, env):
+    def run(self, conn):
         """ Run the actual migration """
-        env.reset()
-        self._run_pre_scripts(env.cr)
+        with conn.cursor() as cr:
+            self._run_pre_scripts(cr)
         if self.upgrade or self.install or self.uninstall:
-            self._run_odoo_reconciliation(env)
-        self._remove(env)
-
-        self._run_post_scripts(env.cr)
-        return env
+            with conn.cursor() as cr:
+                self._run_odoo_reconciliation(cr)
+        with conn.cursor() as cr:
+            self._remove(cr)
+        with conn.cursor() as cr:
+            self._run_post_scripts(cr)
 
     def is_noop(self):
         """ Check if Migration is a non operation """
@@ -243,15 +268,15 @@ class Migration(yaml.YAMLObject):
 
 
 class MigrationSpec(object):
-    """ A series of migrations loaded from a yaml file, bound to an
-    environment. """
+    """ A series of migrations loaded from a yaml file, bound to a database
+    coursor. """
 
-    def __init__(self, env, stream, since, until):
+    def __init__(self, conn, stream, since, until):
         self.migrations = sorted(
             {mig for mig in yaml.load_all(stream)}, key=lambda m: m.version
         )
-        self.mig_table = MigrationTable(env)
-        self.env = env
+        self.mig_table = MigrationTable(conn)
+        self.conn = conn
         self.since = since
         self.until = until
         self.versions = sorted(self.mig_table.versions())
@@ -318,7 +343,7 @@ class MigrationSpec(object):
             if mig.version in self.pending and upgradeservice:
                 try:
                     _logger.info(BOLD + u"retrieve from %s." + RESET, mig.service)
-                    upgradeservice.db.retrieve(self.env, mig.service)
+                    upgradeservice.db.retrieve(self.conn, mig.service)
                 except upgradeservice.errors.NotReadyError:
                     _logger.info(
                         BOLD + u"%s migration not yet ready." + RESET, mig.service
@@ -335,8 +360,9 @@ class MigrationSpec(object):
 
             if mig.service and mig.version not in self.pending and upgradeservice:
                 _logger.info(BOLD + u"submit to %s for migration." + RESET, mig.service)
+                # mode = "test"
                 mode = "production"
-                upgradeservice.db.submit(self.env, mig.service, mode, mig.app_version)
+                upgradeservice.db.submit(self.conn, mig.service, mode, mig.app_version)
                 return
 
             # Apply own migrations
@@ -348,7 +374,7 @@ class MigrationSpec(object):
                     mig.version,
                 )
             else:
-                mig.run(self.env)
+                mig.run(self.conn)
                 _logger.info(
                     BOLD + GREEN + u"finished migrating to %s." + RESET, mig.version
                 )
