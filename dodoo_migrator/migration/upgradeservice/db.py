@@ -44,11 +44,29 @@ class DatabaseApi(object):
         key = getattr(type(self), key).__doc__
         self.cr.execute(
             """
-            INSERT INTO ir_config_parameter(key, value)
-            VALUES (%(key)s, %(value)s);
+            SELECT 1 FROM ir_config_parameter
+            WHERE key = %(key)s;
         """,
             locals(),
         )
+        if self.cr.fetchone():
+            self.cr.execute(
+                """
+                UPDATE ir_config_parameter
+                SET value = %(value)s
+                WHERE key = %(key)s;
+            """,
+                locals(),
+            )
+        else:
+
+            self.cr.execute(
+                """
+                INSERT INTO ir_config_parameter(key, value)
+                VALUES (%(key)s, %(value)s);
+            """,
+                locals(),
+            )
         return value
 
     def _get_icp(self, key):
@@ -177,24 +195,21 @@ class DatabaseApi(object):
         self._token = self._set_icp("token", value)
 
 
-def _sync_odoo(Db, Service):
-    if Db.request and Db.token:
+def _sync_odoo(Db, Service, mode="persist"):
+    if mode == "load":
         Service.request_id = Db.request
         Service.key = Db.token
-    else:
-        Db.request = Service.request_id
-        Db.token = Service.key
-
-    if (Db.sftp_hostname and Db.sftp_port and Db.sftp_user) and not (
-        Service.hostname and Service.sftp_port and Service.sftp_user
-    ):
         Service.hostname = Db.sftp_hostname
         Service.sftp_port = Db.sftp_port
         Service.sftp_user = Db.sftp_user
-    else:
+    elif mode == "persist":
+        Db.request = Service.request_id
+        Db.token = Service.key
         Db.sftp_hostname = Service.hostname
         Db.sftp_port = Service.sftp_port
         Db.sftp_user = Service.sftp_user
+    else:
+        raise Exception
 
 
 def submit(conn, service, aim, target):
@@ -211,8 +226,8 @@ def submit(conn, service, aim, target):
                 Db.private_key,
             )
 
-            _logger.info(u"creating request ...")
-            _sync_odoo(Db, Service)
+            _logger.info(u"creating request and persisting to db ...")
+            _sync_odoo(Db, Service, mode="persist")
             _logger.info(u"request %s created.", Db.request)
         cr.commit()
 
@@ -240,10 +255,12 @@ def retrieve(conn, service):
                 Db.public_key,
                 Db.private_key,
             )
+            _logger.info(u"loading state from db ...")
+            _sync_odoo(Db, Service, mode="load")
             _logger.info(u"regenerating sftp access ...")
             Service.request_sftp_access()
-            _logger.info(u"loading state from db ...")
-            _sync_odoo(Db, Service)
+            _logger.info(u"persisting state to db ...")
+            _sync_odoo(Db, Service, mode="persist")
 
     _logger.info(u"downloading ...")
     if Service.has_converted_to_zip():
