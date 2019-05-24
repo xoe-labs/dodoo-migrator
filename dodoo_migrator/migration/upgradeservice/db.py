@@ -274,7 +274,7 @@ def retrieve(conn, service):
     cli.LOCK.stop = True
     cli.LOCK.join()
     cli.LOCK_CR.close()
-    conn.close_db(conn.dbname)
+    odoo.sql_db.close_db(conn.dbname)
 
     _drop_database(conn.dbname)
     _restore_backup(conn.dbname, f)
