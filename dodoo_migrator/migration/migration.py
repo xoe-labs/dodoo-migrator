@@ -96,7 +96,7 @@ def load_base(db, force_demo=False, status=None, update_module=False):
         graph = odoo.modules.graph.Graph()
         graph.add_module(cr, "base", [])
         report = registry._assertion_report
-        loaded_modules, processed_modules = odoo.modules.load_module_graph(
+        loaded_modules, processed_modules = odoo.modules.loading.load_module_graph(
             cr,
             graph,
             status,
