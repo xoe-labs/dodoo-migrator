@@ -126,8 +126,8 @@ class UpgradeApi(object):
             "target": self.target,
         }
         r = requests.get(CREATE_URL, params=payload).json()
-        if r.get("failure"):
-            raise OdooUpgradeServiceError
+        if r.get("failures"):
+            raise OdooUpgradeServiceError(r.get("failures"))
         self._request = r.get("request")
         self._request_id = self._request.get("id")
         self._key = self._request.get("key")
@@ -138,8 +138,8 @@ class UpgradeApi(object):
         payload = {"request": self.request_id, "key": self.key}
         data = {"ssh_keys": self.public_key}
         r = requests.post(UPLOAD_URL_SFTP, params=payload, data=data).json()
-        if r.get("failure"):
-            raise OdooUpgradeServiceError
+        if r.get("failures"):
+            raise OdooUpgradeServiceError(r.get("failures"))
         self._request_sftp_access = r.get("request")
         self._hostname = self._request_sftp_access.get("hostname")
         self._sftp_port = self._request_sftp_access.get("sftp_port")
@@ -157,15 +157,15 @@ class UpgradeApi(object):
             raise NotUploadedError
         payload = {"request": self.request_id, "key": self.key}
         r = requests.get(PROCESS_URL, params=payload).json()
-        if r.get("failure"):
-            raise OdooUpgradeServiceError
+        if r.get("failures"):
+            raise OdooUpgradeServiceError(r.get("failures"))
         self._process = True
 
     def status(self):
         payload = {"request": self.request_id, "key": self.key}
         r = requests.get(STATUS_URL, params=payload).json()
-        if r.get("failure"):
-            raise OdooUpgradeServiceError
+        if r.get("failures"):
+            raise OdooUpgradeServiceError(r.get("failures"))
         return r.get("request")
 
     def is_ready(self):

@@ -3,13 +3,22 @@
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
 
 
-class OdooUpgradeServiceError(Exception):
+class Error(Exception):
+    """Base class for exceptions in this module."""
+
     pass
 
 
-class NotUploadedError(Exception):
+class OdooUpgradeServiceError(Error):
+    """Exception raised for failures returned from the odoo upgrade service.
+    """
+
     pass
 
 
-class NotReadyError(Exception):
+class NotUploadedError(Error):
+    pass
+
+
+class NotReadyError(Error):
     pass
