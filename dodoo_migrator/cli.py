@@ -23,6 +23,7 @@
 from __future__ import print_function
 
 import logging
+import sys
 import threading
 import time
 from contextlib import contextmanager
@@ -66,7 +67,6 @@ class ApplicationLock(threading.Thread):
     def __init__(self, cr):
         self.acquired = False
         self.cr = cr
-        self.replica = False
         self.stop = False
         super(ApplicationLock, self).__init__()
 
@@ -74,12 +74,10 @@ class ApplicationLock(threading.Thread):
         # If the migration is run concurrently (in several
         # containers, hosts, ...), only 1 is allowed to proceed
         # with the migration. It will be the first one to win
-        # the advisory lock. The others will be flagged as 'replica'.
-        while not pg_advisory_lock(self.cr, ADVISORY_LOCK_IDENT):
-            if not self.replica:  # print only the first time
-                _logger.WARN("A concurrent process is already " "running the migration")
-            self.replica = True
-            time.sleep(0.5)
+        # the advisory lock.
+        if not pg_advisory_lock(self.cr, ADVISORY_LOCK_IDENT):
+            _logger.WARN("A concurrent process is already running the migration")
+            sys.exit(1)
         else:
             self.acquired = True
             idx = 0
@@ -95,60 +93,30 @@ class ApplicationLock(threading.Thread):
                 time.sleep(0.5)
 
 
-def do_migrate(conn, file, since, until):
-    """Perform a migration according to file.
-
-    :param conn: A odoo database connection
-    :type conn: odoo.sql_db.Connection
-    :param file: The migration file to be applied
-    :type config: file
-    :param since: Migrate from this version onwards
-    :type since: Version
-    :param until: Migrate up to this version
-    :type until: Version
-    """
-    global LOCK_CR
-    with conn.cursor() as LOCK_CR:
-        global LOCK
-        LOCK = ApplicationLock(LOCK_CR)
-        LOCK.start()
-
-        while not LOCK.acquired:
-            time.sleep(0.5)
-        else:
-            if LOCK.replica:
-                # when a replica could finally acquire a lock, it
-                # means that the main process has finished the
-                # migration. In that case, the replica should just
-                # exit because the migration already took place. We
-                # wait till then to be sure we won't run Odoo before
-                # the main process could finish the migration.
-                LOCK.stop = True
-                LOCK.join()
-                return
-            # we are not in the replica: go on for the migration
-
-        try:
-            mig_spec = migration.MigrationSpec(conn, file, since, until)
-            mig_spec.run()
-        finally:
-            LOCK.stop = True
-            LOCK.join()
-
-
 @contextmanager
 def MigrationEnvironment(self):
     conn = odoo.sql_db.db_connect(self.database)
+    global LOCK_CR
+    LOCK_CR = conn.cursor()
+    global LOCK
+    LOCK = ApplicationLock(LOCK_CR)
+    LOCK.start()
+    while not LOCK.acquired:
+        time.sleep(0.5)
     with odoo.api.Environment.manage():
         try:
+            # we are not in the replica: go on for the migration
             yield conn
         finally:
+            LOCK.stop = True
+            LOCK.join()
+            LOCK_CR.close()
             if odoo.release.version_info[0] < 10:
                 odoo.modules.registry.RegistryManager.delete(self.database)
             else:
                 odoo.modules.registry.Registry.delete(self.database)
             odoo.sql_db.close_db(self.database)
-    odoo.sql_db.close_all()
+            odoo.sql_db.close_all()
 
 
 @click.command(
@@ -212,7 +180,8 @@ def migrate(env, file, mig_directory, since, until, metrics):
 
     global MIGRATION_SCRIPTS_PATH
     MIGRATION_SCRIPTS_PATH = mig_directory
-    do_migrate(env, file, since, until)
+    mig_spec = migration.MigrationSpec(env, file, since, until)
+    mig_spec.run()
 
 
 if __name__ == "__main__":  # pragma: no cover

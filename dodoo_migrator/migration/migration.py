@@ -326,12 +326,12 @@ class MigrationSpec(object):
 
         failed = self.started - self.pending - self.finished
         if failed:
-            strfmt = u",".join(failed)
+            strfmt = u",".join([str(f) for f in failed])
             _logger.error("migrations %s failed.", strfmt)
             raise MigrationErrorUnfinished(strfmt)
 
         for mig in self._get_todo_migrations():
-            # In case of --since dating to already applied verions
+            # In case of --since dating to already applied versions
             if self._is_applied(mig):
                 _logger.info(
                     BOLD + u"migration %s is already applied - nothing to do." + RESET,
