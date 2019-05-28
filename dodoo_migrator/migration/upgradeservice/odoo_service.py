@@ -149,9 +149,35 @@ class UpgradeApi(object):
         self._sftp_port = self._request_sftp_access.get("sftp_port")
         self._sftp_user = self._request_sftp_access.get("sftp_user")
 
-    def upload(self, local_file_path):
-        with pysftp.Connection(**self._cinfo()) as sftp:
-            sftp.put(local_file_path, self.filename)
+    def upload(self, fl):
+        remotepath = self.upgraded_filename
+        cinfo = self._cinfo()
+        state = {"offset": 0, "retries": 0}
+
+        @retry(
+            stop_max_attempt_number=10,
+            wait_exponential_multiplier=1000,
+            wait_exponential_max=30000,
+        )
+        def _upload():
+            with pysftp.Connection(**cinfo) as sftp:
+                _logger.info(
+                    "Upload from offset %s (retry: %d / 10)",
+                    state["offset"],
+                    state["retries"],
+                )
+                state["retries"] += 1
+                with sftp.open(remotepath, "a") as fr:
+                    fr.set_pipelined(True)
+                    fl.seek(state["offset"])
+                    while True:
+                        data = fl.read(32768)
+                        fr.write(data)
+                        state["offset"] += len(data)
+                        if len(data) == 0:
+                            break
+
+        _upload()
         self._submitted = True
 
     def process(self):
@@ -178,12 +204,9 @@ class UpgradeApi(object):
     def has_converted_to_zip(self):
         return self.status().get("filestore") is True
 
-    def download(self, f):
+    def download(self, fl):
         if not self.is_ready():
             raise NotReadyError
-        self.download_sftp(f)
-
-    def download_sftp(self, fw):
         self.request_sftp_access()
         remotepath = self.upgraded_filename
         cinfo = self._cinfo()
@@ -208,7 +231,7 @@ class UpgradeApi(object):
                     fr.seek(state["offset"])
                     while True:
                         data = fr.read(32768)
-                        fw.write(data)
+                        fl.write(data)
                         state["offset"] += len(data)
                         if len(data) == 0:
                             break
