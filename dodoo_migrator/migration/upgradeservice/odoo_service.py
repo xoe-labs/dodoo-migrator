@@ -3,24 +3,28 @@
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
 
 import base64
-import shutil
+import logging
 
 import paramiko
 import pysftp
 import requests
+from retrying import retry
 
 from .errors import NotReadyError, NotUploadedError, OdooUpgradeServiceError
-
-try:
-    from urllib.request import urlopen
-except ImportError:
-    from urllib2 import urlopen
-
 
 try:
     from StringIO import StringIO
 except ImportError:
     from io import StringIO
+
+
+BOLD = u"\033[1m"
+RESET = u"\033[0m"
+GREEN = u"\033[1;32m"
+BLUE = u"\033[1;34m"
+
+_logger = logging.getLogger(BOLD + u"ODOO UPGRADE SERVICE" + RESET)
+
 
 HOSTNAME = "upgrade.odoo.com"
 CREATE_URL = "https://{}/database/v1/create".format(HOSTNAME)
@@ -177,20 +181,39 @@ class UpgradeApi(object):
     def download(self, f):
         if not self.is_ready():
             raise NotReadyError
-        try:
-            self.download_sftp(f.name)
-        except Exception:
-            self.download_https(f)
+        self.download_sftp(f)
 
-    def download_https(self, f):
-        url = self.status()["upgraded_dump_url"]
-        with urlopen(url) as remote:
-            shutil.copyfileobj(remote, f)
-
-    def download_sftp(self, local_file_path):
+    def download_sftp(self, fw):
         self.request_sftp_access()
-        with pysftp.Connection(**self._cinfo()) as sftp:
-            sftp.get(self.upgraded_filename, local_file_path)
+        remotepath = self.upgraded_filename
+        cinfo = self._cinfo()
+        state = {"offset": 0, "retries": 0}
+
+        @retry(
+            stop_max_attempt_number=10,
+            wait_exponential_multiplier=1000,
+            wait_exponential_max=30000,
+        )
+        def _download():
+            with pysftp.Connection(**cinfo) as sftp:
+                state["file_size"] = sftp.stat(remotepath).st_size
+                _logger.info(
+                    "Download from offset %s (retry: %d / 10)",
+                    state["offset"],
+                    state["retries"],
+                )
+                state["retries"] += 1
+                with sftp.open(remotepath, "r") as fr:
+                    fr.prefetch(state["file_size"])
+                    fr.seek(state["offset"])
+                    while True:
+                        data = fr.read(32768)
+                        fw.write(data)
+                        state["offset"] += len(data)
+                        if len(data) == 0:
+                            break
+
+        _download()
 
     def _cinfo(self):
         cnopts = pysftp.CnOpts()

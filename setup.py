@@ -29,6 +29,7 @@ setup(
         "cryptography",
         "pysftp",
         "requests",
+        "retrying",
     ],
     license="LGPLv3+",
     author="XOE Labs",

@@ -265,9 +265,9 @@ def retrieve(conn, service):
     _logger.info(u"downloading ...")
     if Service.has_converted_to_zip():
         _logger.info(u"was converted to ZIP ...")
-        f = tempfile.NamedTemporaryFile(mode="w+b")
+        f = tempfile.NamedTemporaryFile(mode="a+b")
     else:
-        f = gzip.open(tempfile.mktemp(), "wb")
+        f = gzip.open(tempfile.mktemp(), "a+b")
     Service.download(f)
     _logger.info(u"restoring migrated ...")
     # Release lock and close cursor
