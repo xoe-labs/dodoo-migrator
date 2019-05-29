@@ -18,8 +18,7 @@ class MigrationErrorUnfinished(_MigrationError):
     def __str__(self):
         msg = (
             u"Upgrade of version {} has been attempted and failed. "
-            u"You may want to restore the backup or to run again the "
-            u"migration with the --force flag or to fix it manually "
+            u"You may want to restore the backup or to fix it manually."
             u"In that case, you will have to "
             u"update the  'dodoo_migrator' table yourself.".format(self.unfinished)
         )
