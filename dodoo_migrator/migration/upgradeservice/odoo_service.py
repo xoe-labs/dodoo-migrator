@@ -150,7 +150,7 @@ class UpgradeApi(object):
         self._sftp_user = self._request_sftp_access.get("sftp_user")
 
     def upload(self, fl):
-        remotepath = self.upgraded_filename
+        remotepath = self.filename
         cinfo = self._cinfo()
         state = {"offset": 0, "retries": 0}
 

@@ -230,12 +230,13 @@ def submit(conn, service, aim, target):
             _sync_odoo(Db, Service, mode="persist")
             _logger.info(u"request %s created.", Db.request)
         cr.commit()
-
-    f = gzip.open(tempfile.mktemp(), "wb")
-    _logger.info(u"creating backup ...")
-    _get_backup(conn.dbname, f)
-    _logger.info(u"uploading ...")
-    Service.upload(f.name)
+    fname = tempfile.mktemp()
+    with gzip.open(fname, "wb") as f:
+        _logger.info(u"creating backup ...")
+        _get_backup(conn.dbname, f)
+    with gzip.open(fname, "rb") as f:
+        _logger.info(u"uploading ...")
+        Service.upload(f)
     _logger.info(u"request processing...")
     Service.process()
     f.close()
