@@ -96,14 +96,19 @@ def load_base(db, force_demo=False, status=None, update_module=False):
         graph = odoo.modules.graph.Graph()
         graph.add_module(cr, "base", [])
         report = registry._assertion_report
-        loaded_modules, processed_modules = odoo.modules.loading.load_module_graph(
-            cr,
-            graph,
-            status,
-            perform_checks=update_module,
-            report=report,
-            models_to_check=set(),
-        )
+        if odoo.release.version_info[0] == 8:
+            loaded_modules, processed_modules = odoo.modules.loading.load_module_graph(
+                cr, graph, status, perform_checks=update_module, report=report
+            )
+        else:
+            loaded_modules, processed_modules = odoo.modules.loading.load_module_graph(
+                cr,
+                graph,
+                status,
+                perform_checks=update_module,
+                report=report,
+                models_to_check=set(),
+            )
         registry.setup_models(cr)
 
 
@@ -207,7 +212,10 @@ class Migration(yaml.YAMLObject):
             )
             imm.search([("name", "=", name)]).button_uninstall()
         access_logger.setLevel(ROOT_LOGGER_LEVEL)
-        miniregistry.delete(cr.dbname)
+        if odoo.release.version_info[0] <= 9:
+            odoo.modules.registry.RegistryManager.delete(cr.dbname)
+        else:
+            miniregistry.delete(cr.dbname)
         odoo.modules.load_modules = _load_modules
         _logger.info(
             BOLD + BLUE + u"migrate to %s (Odoo Reconciliation Loop: 'to upgrade' / "
