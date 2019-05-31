@@ -4,8 +4,11 @@ Changes
 Future (?)
 ----------
 - More tests
-- Talk to odoo upgrade service
 - Metrics endpoint (to scrape progress/status)
+
+0.6.7 (2019-05-31)
+------------------
+- Talk to odoo upgrade service
 
 0.6.5 (2019-05-05)
 ------------------
